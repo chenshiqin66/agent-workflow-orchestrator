@@ -115,9 +115,15 @@ export async function createTestRun(
 
   await dispatchJob(runId);
 
+  // Re-read: push failure marks the run failed before we respond.
+  const after = await db.query.runs.findFirst({
+    where: eq(runs.id, runId),
+  });
+  const status = RunStatusSchema.parse(after?.status ?? "queued");
+
   return {
     id: runId,
-    status: "queued",
+    status,
     flowVersionId: published.id,
   };
 }

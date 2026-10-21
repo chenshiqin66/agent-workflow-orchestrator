@@ -21,17 +21,24 @@ export function callbackBaseUrl(): string {
   );
 }
 
+/**
+ * Shared secret for control-plane ↔ executor (`X-Executor-Token`).
+ * Must be set via env `EXECUTOR_TOKEN` — there is no default; unset fails dispatch.
+ */
 export function executorToken(): string {
   const t = process.env.EXECUTOR_TOKEN;
   if (!t) {
-    throw new Error("EXECUTOR_TOKEN is required to dispatch jobs");
+    throw new Error(
+      "EXECUTOR_TOKEN is not set; refuse to dispatch without a shared secret",
+    );
   }
   return t;
 }
 
 /**
  * Build JobPayload for a queued run and POST to the Python executor.
- * On network / non-2xx failure: mark run `failed`, set error_message, append a log event.
+ * On missing EXECUTOR_TOKEN, network, or non-2xx: mark run `failed`, set
+ * error_message, append a log event.
  */
 export async function pushJobToExecutor(runId: string): Promise<void> {
   const run = await db.query.runs.findFirst({
@@ -48,18 +55,18 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
     throw new Error(`flow_version not found for run ${runId}`);
   }
 
-  const token = executorToken();
-  const payload: JobPayload = {
-    run_id: run.id,
-    flow_version_id: version.id,
-    graph: version.graphJson as JobPayload["graph"],
-    input: (run.inputJson ?? {}) as Record<string, unknown>,
-    callback_base_url: callbackBaseUrl(),
-    token,
-  };
-
-  const url = `${executorUrl()}/v1/jobs`;
   try {
+    const token = executorToken();
+    const payload: JobPayload = {
+      run_id: run.id,
+      flow_version_id: version.id,
+      graph: version.graphJson as JobPayload["graph"],
+      input: (run.inputJson ?? {}) as Record<string, unknown>,
+      callback_base_url: callbackBaseUrl(),
+      token,
+    };
+
+    const url = `${executorUrl()}/v1/jobs`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -76,7 +83,9 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
     }
   } catch (err) {
     const message =
-      err instanceof Error ? err.message : `executor dispatch failed: ${String(err)}`;
+      err instanceof Error
+        ? err.message
+        : `executor dispatch failed: ${String(err)}`;
     await markDispatchFailed(runId, message);
   }
 }

@@ -250,6 +250,8 @@ describe("executor callbacks + dispatch", () => {
     });
     expect(res.status).toBe(201);
     const run = await res.json();
+    // Create response must reflect post-dispatch status (not stale "queued")
+    expect(run.status).toBe("failed");
 
     const got = await app.request(`/runs/${run.id}`, { headers: userHeaders });
     const meta = await got.json();
@@ -262,5 +264,47 @@ describe("executor callbacks + dispatch", () => {
     const { events: list } = await events.json();
     expect(list.length).toBeGreaterThanOrEqual(1);
     expect(list[0].eventType).toMatch(/log|run_finished|node_failed/);
+  });
+
+  it("marks run failed when EXECUTOR_TOKEN is unset", async () => {
+    const prev = process.env.EXECUTOR_TOKEN;
+    delete process.env.EXECUTOR_TOKEN;
+    try {
+      const created = await app.request("/projects/p_demo/flows", {
+        method: "POST",
+        headers: userHeaders,
+        body: JSON.stringify({ name: `m2-no-token-${Date.now()}` }),
+      });
+      const { id: flowId } = await created.json();
+      await app.request(`/flows/${flowId}/draft`, {
+        method: "PUT",
+        headers: userHeaders,
+        body: JSON.stringify({ graph: minimalGraph }),
+      });
+      await app.request(`/flows/${flowId}/publish`, {
+        method: "POST",
+        headers: userHeaders,
+      });
+
+      const res = await app.request(`/flows/${flowId}/test-runs`, {
+        method: "POST",
+        headers: userHeaders,
+        body: JSON.stringify({ input: { x: 1 } }),
+      });
+      expect(res.status).toBe(201);
+      const run = await res.json();
+      expect(run.status).toBe("failed");
+
+      const got = await app.request(`/runs/${run.id}`, { headers: userHeaders });
+      const meta = await got.json();
+      expect(meta.status).toBe("failed");
+      expect(meta.errorMessage).toMatch(/EXECUTOR_TOKEN/);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.EXECUTOR_TOKEN;
+      } else {
+        process.env.EXECUTOR_TOKEN = prev;
+      }
+    }
   });
 });
