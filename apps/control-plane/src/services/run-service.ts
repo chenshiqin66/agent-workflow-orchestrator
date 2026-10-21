@@ -277,6 +277,15 @@ function mapSignalDbKind(kind: SignalKind): string {
   return kind;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    value !== undefined &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
+
 export async function signalRun(
   runId: string,
   workspaceId: string,
@@ -287,13 +296,15 @@ export async function signalRun(
     throw httpError("invalid kind", 400);
   }
   const kind = kindParsed.data;
-  const payload =
-    body.payload !== undefined &&
-    body.payload !== null &&
-    typeof body.payload === "object" &&
-    !Array.isArray(body.payload)
-      ? (body.payload as Record<string, unknown>)
-      : undefined;
+
+  // Input requires a plain JSON object; do not silently coerce [] / scalars to {}.
+  if (kind === "input") {
+    if (!isPlainObject(body.payload)) {
+      throw httpError("input signal requires a JSON object payload", 400);
+    }
+  }
+
+  const payload = isPlainObject(body.payload) ? body.payload : undefined;
 
   const { run } = await assertRunInWorkspace(runId, workspaceId);
   const status = RunStatusSchema.parse(run.status);
@@ -325,7 +336,7 @@ export async function signalRun(
     if (reason !== "input") {
       throw httpError("input only valid for input pause", 400);
     }
-    const values = payload ?? {};
+    const values = payload!;
     cp = {
       ...cp,
       state: { ...cp.state, ...values },
@@ -334,6 +345,22 @@ export async function signalRun(
   }
 
   await db.transaction(async (tx: Tx) => {
+    // CAS: only one concurrent signal can leave paused → queued.
+    const updated = await tx
+      .update(runs)
+      .set({
+        checkpointJson: cp,
+        status: "queued",
+        pauseReason: null,
+        finishedAt: null,
+      })
+      .where(and(eq(runs.id, runId), eq(runs.status, "paused")))
+      .returning({ id: runs.id });
+
+    if (updated.length === 0) {
+      throw httpError("cannot signal run: no longer paused", 409);
+    }
+
     await tx.insert(runSignals).values({
       id: newId("sig"),
       runId,
@@ -349,16 +376,6 @@ export async function signalRun(
       kind,
       ...(payload !== undefined ? { payload } : {}),
     }, cp.node_id);
-
-    await tx
-      .update(runs)
-      .set({
-        checkpointJson: cp,
-        status: "queued",
-        pauseReason: null,
-        finishedAt: null,
-      })
-      .where(eq(runs.id, runId));
   });
 
   await dispatchJob(runId);

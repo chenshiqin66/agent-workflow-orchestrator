@@ -309,8 +309,18 @@ describe("executor callbacks + dispatch", () => {
     }
   });
 
+  async function markRunning(runId: string): Promise<void> {
+    const res = await app.request(`/internal/runs/${runId}/status`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({ status: "running" }),
+    });
+    expect(res.status).toBe(200);
+  }
+
   it("pause on breakpoint_hit stores checkpoint; resume job includes checkpoint+breakpoints", async () => {
     const { runId } = await createPublishedRun();
+    await markRunning(runId);
 
     const putBp = await app.request(`/runs/${runId}/breakpoints`, {
       method: "PUT",
@@ -365,6 +375,7 @@ describe("executor callbacks + dispatch", () => {
 
   it("bad checkpoint on resume fails dispatch; no cold-start job", async () => {
     const { runId } = await createPublishedRun();
+    await markRunning(runId);
 
     const pause = await app.request(`/internal/runs/${runId}/events`, {
       method: "POST",

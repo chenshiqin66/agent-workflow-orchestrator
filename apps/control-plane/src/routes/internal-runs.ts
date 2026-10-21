@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   CheckpointSchema,
   parseCallbackEvent,
@@ -83,8 +83,8 @@ internalRunsRoutes.post("/internal/runs/:runId/events", async (c) => {
       ts,
     });
 
-    // Do not resurrect a terminal run with a late pause event.
-    if (pauseCheckpoint && !TERMINAL.has(run.status)) {
+    // Pause only from running — ignore queued / cancel_requested / already paused / terminal.
+    if (pauseCheckpoint && run.status === "running") {
       await tx
         .update(runs)
         .set({
@@ -93,7 +93,7 @@ internalRunsRoutes.post("/internal/runs/:runId/events", async (c) => {
           pauseReason: pauseCheckpoint.pause_kind,
           finishedAt: null,
         })
-        .where(eq(runs.id, runId));
+        .where(and(eq(runs.id, runId), eq(runs.status, "running")));
     }
 
     return {
@@ -162,8 +162,8 @@ internalRunsRoutes.post("/internal/runs/:runId/status", async (c) => {
   if (status === "running" && !run.startedAt) {
     patch.startedAt = now;
   }
-  // Late pause must not overwrite a terminal run.
-  if (status === "paused" && TERMINAL.has(run.status)) {
+  // Pause status only accepted while running (not queued/cancel_requested/paused/terminal).
+  if (status === "paused" && run.status !== "running") {
     return c.json({ id: runId, status: run.status });
   }
 

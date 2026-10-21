@@ -3,7 +3,6 @@ import type { FlowGraph } from "@awo/graph-schema";
 import { FlowCanvas } from "./canvas/FlowCanvas";
 import { api } from "./api/client";
 import { saveThenPublish } from "./api/save-then-publish";
-import { SAMPLE_GRAPH } from "./sample-graph";
 import { SAMPLE_M2_GRAPH } from "./sample-m2-graph";
 import { SAMPLE_M3_GRAPH } from "./sample-m3-graph";
 import { TestRunPanel } from "./run/TestRunPanel";
@@ -22,7 +21,7 @@ function emptyGraph(id: string): FlowGraph {
 }
 
 function withSampleContent(id: string): FlowGraph {
-  return { ...SAMPLE_GRAPH, id };
+  return { ...SAMPLE_M3_GRAPH, id };
 }
 
 function withM2Sample(id: string): FlowGraph {
@@ -321,6 +320,7 @@ export function App() {
           selectedNodeId={selectedNodeId}
           breakpointNodeIds={breakpointNodeIds}
           onToggleBreakpoint={onToggleBreakpoint}
+          preferM3Input
           onRunIdChange={setActiveRunId}
         />
       </div>

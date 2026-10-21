@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { ApiClient, PauseReason, RunDetail } from "../api/client";
+import { parseSignalInputPayload } from "./parseSignalInput";
 
 type Props = {
   run: RunDetail;
@@ -102,11 +103,11 @@ export function SignalPanel({
             className="awo-run-panel__primary"
             disabled={disabled}
             onClick={() => {
-              let payload: unknown;
+              let payload: Record<string, unknown>;
               try {
-                payload = JSON.parse(inputText);
-              } catch {
-                onError?.("输入必须是合法 JSON");
+                payload = parseSignalInputPayload(inputText);
+              } catch (e) {
+                onError?.((e as Error).message);
                 return;
               }
               void send("input", payload);
