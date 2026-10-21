@@ -69,6 +69,68 @@ describe("expandSubflows", () => {
     ).rejects.toBeInstanceOf(SubflowExpandError);
   });
 
+  it("expands nested Subflow parent→mid→leaf with prefixed ids", async () => {
+    const leaf: FlowGraph = {
+      id: "fv_leaf",
+      state_schema: { type: "object", properties: {} },
+      nodes: [
+        { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+        { id: "t", type: "Transform", config: { set: { nested: true } }, ui: { x: 40, y: 0 } },
+        { id: "e", type: "End", config: {}, ui: { x: 80, y: 0 } },
+      ],
+      edges: [
+        { id: "e1", source: "s", sourceHandle: "out", target: "t", targetHandle: "in", kind: "default", label: "" },
+        { id: "e2", source: "t", sourceHandle: "out", target: "e", targetHandle: "in", kind: "default", label: "" },
+      ],
+    };
+    const mid: FlowGraph = {
+      id: "fv_mid",
+      state_schema: { type: "object", properties: {} },
+      nodes: [
+        { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+        { id: "sf", type: "Subflow", config: { flow_version_id: "fv_leaf" }, ui: { x: 40, y: 0 } },
+        { id: "e", type: "End", config: {}, ui: { x: 80, y: 0 } },
+      ],
+      edges: [
+        { id: "m1", source: "s", sourceHandle: "out", target: "sf", targetHandle: "in", kind: "default", label: "" },
+        { id: "m2", source: "sf", sourceHandle: "out", target: "e", targetHandle: "in", kind: "default", label: "" },
+      ],
+    };
+    const nestedParent: FlowGraph = {
+      id: "fv_parent_nested",
+      state_schema: { type: "object", properties: {} },
+      nodes: [
+        { id: "ps", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+        { id: "sf", type: "Subflow", config: { flow_version_id: "fv_mid" }, ui: { x: 40, y: 0 } },
+        { id: "pe", type: "End", config: {}, ui: { x: 80, y: 0 } },
+      ],
+      edges: [
+        { id: "p1", source: "ps", sourceHandle: "out", target: "sf", targetHandle: "in", kind: "default", label: "" },
+        { id: "p2", source: "sf", sourceHandle: "out", target: "pe", targetHandle: "in", kind: "default", label: "" },
+      ],
+    };
+    const graphs: Record<string, FlowGraph> = {
+      fv_mid: mid,
+      fv_leaf: leaf,
+    };
+    const out = await expandSubflows(nestedParent, {
+      resolvePublished: async (id) =>
+        graphs[id]
+          ? { graph: graphs[id]!, status: "published", workspaceOk: true }
+          : null,
+    });
+    expect(out.nodes.some((n) => n.type === "Subflow")).toBe(false);
+    const ids = out.nodes.map((n) => n.id);
+    expect(ids).toContain("sf__s");
+    expect(ids).toContain("sf__e");
+    expect(ids).toContain("sf__sf__t");
+    expect(out.edges.some((e) => e.target === "sf__s")).toBe(true);
+    expect(out.edges.some((e) => e.source === "sf__e")).toBe(true);
+    // mid's Subflow rewired to nested leaf Start/End under double prefix
+    expect(out.edges.some((e) => e.target === "sf__sf__s")).toBe(true);
+    expect(out.edges.some((e) => e.source === "sf__sf__e")).toBe(true);
+  });
+
   it("rejects depth exceeded", async () => {
     const nested: FlowGraph = {
       id: "fv_d1",

@@ -264,3 +264,15 @@ body,
   outline: 2px dashed #ef4444;
   outline-offset: 2px;
 }
+
+.awo-node-inspector {
+  top: 12px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+}
+
+.awo-node-inspector input {
+  min-width: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}

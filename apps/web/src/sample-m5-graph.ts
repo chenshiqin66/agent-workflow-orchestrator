@@ -53,4 +53,4 @@ export const SAMPLE_M5_GRAPH: FlowGraph = {
 };
 
 export const SAMPLE_M5_HINT =
-  "M5 样例：请先发布一个子流程，把 Subflow 节点的 flow_version_id 改成该 published 版本 id，再试运行。";
+  "M5 样例：请先发布一个子流程，选中 Subflow 节点后在画布左上角填写 flow_version_id（published 版本 id），再试运行。";

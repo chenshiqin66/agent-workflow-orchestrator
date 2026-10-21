@@ -264,7 +264,8 @@ export function App() {
           {
             id,
             type: typeKey,
-            config: {},
+            config:
+              typeKey === "Subflow" ? { flow_version_id: "" } : {},
             ui: { x: 120 + g.nodes.length * 28, y: 120 + (g.nodes.length % 5) * 36 },
           },
         ],

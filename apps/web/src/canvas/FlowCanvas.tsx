@@ -21,7 +21,7 @@ import "@xyflow/react/dist/style.css";
 import { BaseNode } from "./nodes/BaseNode";
 import { DecisionNode } from "./nodes/DecisionNode";
 import { LabeledEdge } from "./edges/LabeledEdge";
-import { fromXyflow, toXyflow, type AwoEdgeData } from "./graph-adapter";
+import { fromXyflow, toXyflow, type AwoEdgeData, type AwoNodeData } from "./graph-adapter";
 import type { EdgeKind, FlowGraph } from "@awo/graph-schema";
 
 const nodeTypes = {
@@ -64,6 +64,7 @@ export function FlowCanvas({
   const [nodes, setNodes, onNodesChangeInternal] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState(initial.edges);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
@@ -75,6 +76,7 @@ export function FlowCanvas({
     setNodes(next.nodes);
     setEdges(next.edges);
     setSelectedEdgeId(null);
+    setSelectedNodeId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on epoch/id
   }, [graphEpoch, graph.id, setNodes, setEdges]);
 
@@ -180,7 +182,9 @@ export function FlowCanvas({
   const onSelectionChange = useCallback(
     (params: OnSelectionChangeParams) => {
       setSelectedEdgeId(params.edges[0]?.id ?? null);
-      onSelectedNodeChange?.(params.nodes[0]?.id ?? null);
+      const nodeId = params.nodes[0]?.id ?? null;
+      setSelectedNodeId(nodeId);
+      onSelectedNodeChange?.(nodeId);
     },
     [onSelectedNodeChange],
   );
@@ -219,6 +223,33 @@ export function FlowCanvas({
     });
   };
 
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const selectedNodeData = (selectedNode?.data ?? {}) as Partial<AwoNodeData>;
+  const isSubflowSelected = selectedNodeData.graphType === "Subflow";
+  const selectedFlowVersionId =
+    typeof selectedNodeData.config?.flow_version_id === "string"
+      ? selectedNodeData.config.flow_version_id
+      : "";
+
+  const onSubflowFlowVersionChange = (value: string) => {
+    if (!selectedNodeId || !isSubflowSelected) return;
+    setNodes((nds) => {
+      const next = nds.map((n) => {
+        if (n.id !== selectedNodeId) return n;
+        const prev = (n.data ?? {}) as AwoNodeData;
+        return {
+          ...n,
+          data: {
+            ...prev,
+            config: { ...(prev.config ?? {}), flow_version_id: value },
+          } satisfies AwoNodeData,
+        };
+      });
+      emit(next, edgesRef.current);
+      return next;
+    });
+  };
+
   return (
     <div className="awo-canvas-wrap">
       {selectedEdgeId ? (
@@ -230,6 +261,24 @@ export function FlowCanvas({
               value={selectedLabel}
               onChange={(ev) => onSelectedLabelChange(ev.target.value)}
               placeholder="例如：查询成功"
+            />
+          </label>
+        </div>
+      ) : null}
+      {isSubflowSelected && selectedNodeId ? (
+        <div
+          className="awo-edge-editor awo-node-inspector"
+          role="group"
+          aria-label="Subflow 配置"
+        >
+          <label>
+            flow_version_id
+            <input
+              type="text"
+              value={selectedFlowVersionId}
+              onChange={(ev) => onSubflowFlowVersionChange(ev.target.value)}
+              placeholder="published 子流程版本 id"
+              spellCheck={false}
             />
           </label>
         </div>

@@ -154,6 +154,64 @@ describe("templates API", () => {
     expect(detail.graph.nodes.length).toBeGreaterThan(0);
   });
 
+  it("duplicate template name returns 409", async () => {
+    const createFlow = await app.request("/projects/p_demo/flows", {
+      method: "POST",
+      headers: jsonHeaders("u_dev"),
+      body: JSON.stringify({ name: `tpl_dup_src_${Date.now()}` }),
+    });
+    expect(createFlow.status).toBe(201);
+    const flow = (await createFlow.json()) as { id: string };
+
+    const draft = await app.request(`/flows/${flow.id}/draft`, {
+      method: "PUT",
+      headers: jsonHeaders("u_dev"),
+      body: JSON.stringify({ graph: tinyGraph }),
+    });
+    expect(draft.status).toBe(200);
+    const draftBody = (await draft.json()) as { versionId: string; id?: string };
+    const versionId =
+      draftBody.versionId ??
+      (await (async () => {
+        const g = await app.request(`/flows/${flow.id}`, {
+          headers: jsonHeaders("u_dev"),
+        });
+        const fj = (await g.json()) as { latestDraftVersionId: string };
+        return fj.latestDraftVersionId;
+      })());
+    await insertSucceededRunForHash(versionId);
+
+    const pub = await app.request(`/flows/${flow.id}/publish`, {
+      method: "POST",
+      headers: jsonHeaders("u_dev"),
+    });
+    expect(pub.status).toBe(200);
+    const published = (await pub.json()) as { versionId: string };
+
+    const tplName = `dup_${Date.now()}`;
+    const first = await app.request("/templates", {
+      method: "POST",
+      headers: jsonHeaders("u_dev"),
+      body: JSON.stringify({
+        name: tplName,
+        flow_version_id: published.versionId,
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await app.request("/templates", {
+      method: "POST",
+      headers: jsonHeaders("u_dev"),
+      body: JSON.stringify({
+        name: tplName,
+        flow_version_id: published.versionId,
+      }),
+    });
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: string };
+    expect(body.error).toMatch(/already exists/i);
+  });
+
   it("lists seeded demo template", async () => {
     const list = await app.request("/templates", {
       headers: jsonHeaders("u_viewer"),

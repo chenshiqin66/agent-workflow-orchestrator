@@ -19,6 +19,16 @@ function httpError(message: string, status: number): Error {
   return err;
 }
 
+function isUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    (e as { code?: string }).code === "23505"
+  );
+}
+
+
 export type TemplateSummary = {
   id: string;
   name: string;
@@ -88,15 +98,22 @@ export async function createTemplateFromPublished(
   if (!project) throw httpError("flow version not found", 404);
 
   const id = newId("tpl");
-  await db.insert(flowTemplates).values({
-    id,
-    workspaceId,
-    name: body.name,
-    description: body.description ?? "",
-    graphJson: ver.graphJson,
-    sourceFlowVersionId: ver.id,
-    createdBy: userId,
-  });
+  try {
+    await db.insert(flowTemplates).values({
+      id,
+      workspaceId,
+      name: body.name,
+      description: body.description ?? "",
+      graphJson: ver.graphJson,
+      sourceFlowVersionId: ver.id,
+      createdBy: userId,
+    });
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      throw httpError("template name already exists", 409);
+    }
+    throw e;
+  }
 
   return {
     id,

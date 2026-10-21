@@ -95,13 +95,11 @@ export async function expandSubflows(
         { flow_version_id: fvId },
       );
     }
-    const expandedChild = await expandSubflows(resolved.graph, {
-      ...opts,
-      _stack: [...stack, fvId],
-      _depth: depth + 1,
-    });
-    const starts = expandedChild.nodes.filter((n) => n.type === "Start");
-    const ends = expandedChild.nodes.filter((n) => n.type === "End");
+    // Validate Start/End on the child graph *before* flattening nested
+    // Subflows — nested expand leaves multiple Start/End nodes in the
+    // flattened child, which must not fail this check.
+    const starts = resolved.graph.nodes.filter((n) => n.type === "Start");
+    const ends = resolved.graph.nodes.filter((n) => n.type === "End");
     if (starts.length !== 1 || ends.length !== 1) {
       throw new SubflowExpandError(
         "subflow_invalid_child",
@@ -109,6 +107,11 @@ export async function expandSubflows(
         { flow_version_id: fvId },
       );
     }
+    const expandedChild = await expandSubflows(resolved.graph, {
+      ...opts,
+      _stack: [...stack, fvId],
+      _depth: depth + 1,
+    });
     const childNodes = expandedChild.nodes.map((n) => ({
       ...n,
       id: prefixId(node.id, n.id),
