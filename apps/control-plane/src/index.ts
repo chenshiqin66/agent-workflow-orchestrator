@@ -9,6 +9,7 @@ import { runsRoutes } from "./routes/runs";
 import { internalRunsRoutes } from "./routes/internal-runs";
 import { assetsRoutes } from "./routes/assets";
 import { templatesRoutes } from "./routes/templates";
+import { metricsRoutes } from "./routes/metrics";
 
 export const PACKAGE = "@awo/control-plane";
 
@@ -43,6 +44,7 @@ app.route("/", flowVersionRoutes);
 app.route("/", runsRoutes);
 app.route("/", assetsRoutes);
 app.route("/", templatesRoutes);
+app.route("/", metricsRoutes);
 
 export { app };
 
