@@ -1,7 +1,7 @@
 # Design Spec: M3 — Breakpoint / Signal / Human Approval
 
 - Date: 2026-10-22
-- Status: draft for user review
+- Status: approved; plan in `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
 - Parent: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (§11 M3)
 - Depends on: M1 (graph canvas + publish) + M2 (Python executor + test run + timeline)
 - Architecture choice: **checkpoint resume** (stateless executor jobs)
@@ -170,4 +170,4 @@ Keep AST-safe Branch; no real LLM. Cancel: if job sees cancel via existing mecha
 
 ## 10. Approval
 
-Discussed 2026-10-22 in chat. Awaiting user review of this written spec before `writing-plans`.
+Discussed 2026-10-22 in chat. Spec approved; implementation plan written and executed (Tasks 1–7).

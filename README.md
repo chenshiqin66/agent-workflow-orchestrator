@@ -1,12 +1,13 @@
 # Agent Workflow Orchestrator
 
-拖拽式智能体/流程编排系统（M1：画布 + 控制面草稿/发布；M2：Python 执行器 + 试运行时间线）。
+拖拽式智能体/流程编排系统（M1：画布 + 控制面草稿/发布；M2：Python 执行器 + 试运行时间线；M3：断点 / signal / 人工审批）。
 
 - **架构（方案 A）**：TypeScript 控制面 + 语言无关 Graph JSON + HTTP 执行器（回调）。
 - **Monorepo**：`apps/web`（Vite + React + XYFlow）、`apps/control-plane`（Hono + Drizzle + PostgreSQL）、`apps/executor-py`（FastAPI）、`packages/graph-schema` / `packages/run-protocol`。
 - **设计文档**：`docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`
 - **M1 实现计划**：`docs/superpowers/plans/2026-10-21-m1-graph-canvas-control-plane.md`
 - **M2 实现计划**：`docs/superpowers/plans/2026-10-21-m2-python-executor-test-run-timeline.md`
+- **M3 设计 / 实现计划**：`docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md` · `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
 - **Run protocol 草图**：`docs/run-protocol-openapi.md`
 
 ## Prerequisites
@@ -67,8 +68,8 @@ Copy `apps/web/.env.example` → `apps/web/.env` if you need a non-default API b
 |---|---|
 | `@awo/graph-schema` | Shared Zod graph + content hash |
 | `@awo/run-protocol` | Run status / events / JobPayload / callback Zod |
-| `@awo/control-plane` | REST: flows, publish, test-runs, event poll, executor callbacks |
-| `@awo/web` | XYFlow canvas + 试运行 panel / timeline |
+| `@awo/control-plane` | REST: flows, publish, test-runs, event poll, signal/state/breakpoints, executor callbacks |
+| `@awo/web` | XYFlow canvas + 试运行 panel / timeline / SignalPanel / breakpoints |
 | `apps/executor-py` | Python graph engine + `POST /v1/jobs` |
 
 ## M1 acceptance checklist
@@ -96,7 +97,30 @@ export EXECUTOR_TOKEN=test-executor-token-m2
 pnpm test:m2
 ```
 
-Out of scope for M2 (later milestones): breakpoints / signals / HumanApproval (M3), roles / assets / publish gate (M4), subflow / templates / metrics (M5), WS push (poll only), draft dry-run, mid-flight cancel in executor.
+Out of scope for M2 (delivered in M3+): breakpoints / signals / HumanApproval; roles / assets / publish gate (M4); subflow / templates / metrics (M5); WS push (poll only); draft dry-run; mid-flight cancel in executor.
+
+## M3 acceptance checklist
+
+Requires control-plane + executor + web (same env as M2). Demo uses the **M3 sample** graph (`Start` → `Transform` → `Breakpoint` → `HumanApproval` → branches → `End`) loaded by default in the web app (`apps/web/src/sample-m3-graph.ts`).
+
+1. **Breakpoint pause → patch → resume** — publish, 试运行; run hits `Breakpoint` (or a dynamic BP via canvas toggle / `PUT …/breakpoints`) → status `paused`, timeline shows `breakpoint_hit`. Edit state in the State editor (`PATCH …/state` → `state_patched`), then Resume (`POST …/signal` kind `resume` → `signal_received`) → run continues to succeed (or next pause).
+2. **HumanApproval** — Approve takes the **success** edge; Reject takes **failure** (fallback `default` if no failure edge).
+3. **Input** — when a graph includes an `Input` node, submitted values merge into state and appear in later emits / transforms.
+4. **Cancel while paused** — Cancel → `cancelled` immediately; no further executor work.
+5. **Polling** — timeline keeps polling through `paused`; stops only on terminal statuses.
+6. **Integration test** — with Postgres up and executor deps installed:
+
+```bash
+export DATABASE_URL=postgres://awo:awo@localhost:5432/awo
+export EXECUTOR_TOKEN=test-executor-token-m3
+pnpm test:m3
+```
+
+`pnpm test:m2` must remain green after M3.
+
+How to run the sample locally: start Postgres + migrate/seed, export `EXECUTOR_TOKEN` / `EXECUTOR_URL` / `CALLBACK_BASE_URL` / `DATABASE_URL`, then `pnpm dev:api`, `pnpm dev:executor`, `pnpm dev:web`. Open `http://localhost:5173`, publish the M3 demo flow, open 试运行, submit input, use SignalPanel / breakpoints as above.
+
+Out of scope for M3: explicit `step` API, WebSocket/SSE push, multi-approver routing / SLA, M4 roles/assets/publish gate, M5 subflow/templates/metrics, draft dry-run.
 
 ## Tests
 
@@ -108,6 +132,7 @@ pnpm --filter @awo/run-protocol test
 pnpm --filter @awo/control-plane test   # needs DATABASE_URL
 pnpm --filter @awo/web test
 pnpm test:m2                            # control-plane + live executor happy path
+pnpm test:m3                            # pause → signal → resume (live executor)
 cd apps/executor-py && .venv/bin/python -m pytest
 ```
 
