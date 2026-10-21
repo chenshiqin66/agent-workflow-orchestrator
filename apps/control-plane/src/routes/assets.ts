@@ -125,7 +125,11 @@ assetsRoutes.post("/assets/tools", async (c) => {
 
 assetsRoutes.get("/assets/tools/:id", async (c) => {
   try {
-    const row = await getTool(c.get("workspaceId"), c.req.param("id"));
+    const row = await getTool(
+      c.get("workspaceId"),
+      c.req.param("id"),
+      c.get("role"),
+    );
     return c.json(mapTool(row));
   } catch (e) {
     return handleError(c, e);

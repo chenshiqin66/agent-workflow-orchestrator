@@ -67,3 +67,43 @@
 .awo-assets-panel__muted {
   color: #64748b;
 }
+
+.awo-assets-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.awo-assets-panel__create select {
+  padding: 4px 6px;
+  max-width: 110px;
+}
+.awo-assets-panel__config-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #475569;
+}
+.awo-assets-panel__config {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+.awo-assets-panel li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.awo-assets-panel__delete {
+  font-size: 11px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}

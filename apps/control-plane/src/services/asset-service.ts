@@ -110,11 +110,16 @@ export async function listTools(
 export async function getTool(
   workspaceId: string,
   id: string,
+  role?: string,
 ): Promise<ToolRow> {
   const row = await db.query.tools.findFirst({
     where: and(eq(tools.id, id), eq(tools.workspaceId, workspaceId)),
   });
   if (!row) throw httpError("tool not found", 404);
+  // Role-gated reads match listTools; omit role for developer writes (update).
+  if (role !== undefined && !toolVisibleToRole(row.allowedRoles, role)) {
+    throw httpError("tool not found", 404);
+  }
   return row;
 }
 
