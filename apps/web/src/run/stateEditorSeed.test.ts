@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatCheckpointState,
   pauseEpisodeKey,
+  serverAckCaughtUp,
   shouldSeedStateEditor,
 } from "./stateEditorSeed";
 
@@ -69,11 +70,54 @@ describe("shouldSeedStateEditor", () => {
       }),
     ).toBe("seed");
   });
+
+  it("keeps local text after save while awaiting server ack (stale props must not wipe)", () => {
+    expect(
+      shouldSeedStateEditor({
+        episodeKey: "r1|breakpoint|n1",
+        prevEpisodeKey: "r1|breakpoint|n1",
+        dirty: false,
+        awaitingServerAck: true,
+      }),
+    ).toBe("keep");
+  });
+
+  it("seeds same episode when not dirty and not awaiting ack", () => {
+    expect(
+      shouldSeedStateEditor({
+        episodeKey: "r1|breakpoint|n1",
+        prevEpisodeKey: "r1|breakpoint|n1",
+        dirty: false,
+        awaitingServerAck: false,
+      }),
+    ).toBe("seed");
+  });
+
+  it("seeds new pause episode even while awaiting ack", () => {
+    expect(
+      shouldSeedStateEditor({
+        episodeKey: "r1|approval|ha_1",
+        prevEpisodeKey: "r1|breakpoint|n1",
+        dirty: false,
+        awaitingServerAck: true,
+      }),
+    ).toBe("seed");
+  });
+
 });
 
 describe("formatCheckpointState", () => {
   it("pretty-prints objects and empty object for missing", () => {
     expect(formatCheckpointState({ a: 1 })).toBe('{\n  "a": 1\n}');
     expect(formatCheckpointState(undefined)).toBe("{}");
+  });
+});
+
+describe("serverAckCaughtUp", () => {
+  it("is true only when awaiting and server matches local fingerprint", () => {
+    expect(serverAckCaughtUp(true, '{\n  "a": 1\n}', '{\n  "a": 1\n}')).toBe(true);
+    expect(serverAckCaughtUp(true, "{}", '{\n  "a": 1\n}')).toBe(false);
+    expect(serverAckCaughtUp(false, '{\n  "a": 1\n}', '{\n  "a": 1\n}')).toBe(false);
+    expect(serverAckCaughtUp(true, "{}", null)).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import type { ApiClient, RunDetail } from "../api/client";
 import {
   formatCheckpointState,
   pauseEpisodeKey,
+  serverAckCaughtUp,
   shouldSeedStateEditor,
 } from "./stateEditorSeed";
 
@@ -25,6 +26,8 @@ export function StateEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const episodeKeyRef = useRef<string | null>(null);
+  const appliedFingerprintRef = useRef<string | null>(null);
+  const awaitingAckRef = useRef(false);
 
   const episodeKey = pauseEpisodeKey(run);
   // Stabilize against poll object-identity churn on checkpoint.state
@@ -34,18 +37,34 @@ export function StateEditor({
   );
 
   useEffect(() => {
+    let awaiting = awaitingAckRef.current;
+    if (
+      serverAckCaughtUp(
+        awaiting,
+        serializedState,
+        appliedFingerprintRef.current,
+      )
+    ) {
+      awaitingAckRef.current = false;
+      awaiting = false;
+    }
+
     const action = shouldSeedStateEditor({
       episodeKey,
       prevEpisodeKey: episodeKeyRef.current,
       dirty,
+      awaitingServerAck: awaiting,
     });
     if (action === "keep") return;
     episodeKeyRef.current = episodeKey;
+    awaitingAckRef.current = false;
     if (action === "clear") {
+      appliedFingerprintRef.current = null;
       setDirty(false);
       setText("{}");
       return;
     }
+    appliedFingerprintRef.current = serializedState;
     setDirty(false);
     setText(serializedState);
   }, [episodeKey, serializedState, dirty]);
@@ -70,9 +89,14 @@ export function StateEditor({
     }
     setSaving(true);
     try {
-      await client.patchRunState(run.id, {
+      const updated = await client.patchRunState(run.id, {
         state: parsed as Record<string, unknown>,
       });
+      const savedState = updated.checkpoint?.state ?? parsed;
+      const fingerprint = formatCheckpointState(savedState);
+      appliedFingerprintRef.current = fingerprint;
+      awaitingAckRef.current = true;
+      setText(fingerprint);
       setDirty(false);
       onDone?.();
     } catch (e) {
@@ -95,6 +119,7 @@ export function StateEditor({
         value={text}
         onChange={(e) => {
           setDirty(true);
+          awaitingAckRef.current = false;
           setText(e.target.value);
         }}
         disabled={busy || saving}
