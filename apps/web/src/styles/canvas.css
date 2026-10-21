@@ -31,12 +31,56 @@ body,
 }
 
 .awo-app__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px 20px;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.awo-app__title {
   font-size: 18px;
   font-weight: 600;
   color: #1e40af;
-  border-bottom: 1px solid rgba(59, 130, 246, 0.15);
-  background: rgba(255, 255, 255, 0.6);
+}
+
+.awo-app__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.awo-app__toolbar button {
+  appearance: none;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: #fff;
+  color: #1e40af;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.awo-app__toolbar button:hover:not(:disabled) {
+  background: #eff6ff;
+}
+
+.awo-app__toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.awo-app__meta,
+.awo-app__status {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.awo-app__status {
+  color: #1e3a5f;
 }
 
 .awo-canvas-wrap {

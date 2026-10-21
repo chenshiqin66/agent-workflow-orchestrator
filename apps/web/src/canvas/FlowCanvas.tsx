@@ -1,15 +1,19 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
   addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   useEdgesState,
   useNodesState,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -30,17 +34,33 @@ const edgeTypes = {
 
 type Props = {
   graph: FlowGraph;
+  /** Bump when graph is loaded/replaced from API so XYFlow state resets. */
+  graphEpoch?: number;
   onGraphChange?: (graph: FlowGraph) => void;
 };
 
-export function FlowCanvas({ graph, onGraphChange }: Props) {
-  const initial = useMemo(() => toXyflow(graph), [graph]);
-  const [nodes, , onNodesChange] = useNodesState(initial.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
+  const initial = toXyflow(graph);
+  const [nodes, setNodes, onNodesChangeInternal] = useNodesState(initial.nodes);
+  const [edges, setEdges, onEdgesChangeInternal] = useEdgesState(initial.edges);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  // Reset internal XYFlow state when API (or parent) loads a different graph.
+  useEffect(() => {
+    const next = toXyflow(graph);
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on epoch/id
+  }, [graphEpoch, graph.id, setNodes, setEdges]);
 
   const emit = useCallback(
     (nextNodes: Node[], nextEdges: Edge[]) => {
-      onGraphChange?.(fromXyflow(nextNodes, nextEdges, graph.id, graph.state_schema));
+      onGraphChange?.(
+        fromXyflow(nextNodes, nextEdges, graph.id, graph.state_schema),
+      );
     },
     [graph.id, graph.state_schema, onGraphChange],
   );
@@ -48,39 +68,65 @@ export function FlowCanvas({ graph, onGraphChange }: Props) {
   const onConnect = useCallback(
     (connection: Connection) => {
       setEdges((eds) => {
+        const kind =
+          connection.sourceHandle === "failure"
+            ? "failure"
+            : connection.sourceHandle === "success"
+              ? "success"
+              : "default";
+        const stroke =
+          kind === "failure"
+            ? "#ef4444"
+            : kind === "success"
+              ? "#3b82f6"
+              : "#94a3b8";
         const next = addEdge(
           {
             ...connection,
             type: "labeled",
-            data: { kind: "default", label: "" },
-            style: { stroke: "#94a3b8", strokeWidth: 2 },
+            data: { kind, label: "" },
+            style: { stroke, strokeWidth: 2 },
           },
           eds,
         );
-        emit(nodes, next);
+        emit(nodesRef.current, next);
         return next;
       });
     },
-    [emit, nodes, setEdges],
+    [emit, setEdges],
   );
 
-  const handleNodesChange: typeof onNodesChange = useCallback(
-    (changes) => {
-      onNodesChange(changes);
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      onNodesChangeInternal(changes);
+      const structural = changes.some(
+        (c) => c.type === "remove" || c.type === "add",
+      );
+      if (structural) {
+        const next = applyNodeChanges(changes, nodesRef.current);
+        emit(next, edgesRef.current);
+      }
     },
-    [onNodesChange],
+    [emit, onNodesChangeInternal],
   );
 
-  const handleEdgesChange: typeof onEdgesChange = useCallback(
-    (changes) => {
-      onEdgesChange(changes);
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      onEdgesChangeInternal(changes);
+      const structural = changes.some(
+        (c) => c.type === "remove" || c.type === "add",
+      );
+      if (structural) {
+        const next = applyEdgeChanges(changes, edgesRef.current);
+        emit(nodesRef.current, next);
+      }
     },
-    [onEdgesChange],
+    [emit, onEdgesChangeInternal],
   );
 
   const onNodeDragStop = useCallback(() => {
-    emit(nodes, edges);
-  }, [emit, nodes, edges]);
+    emit(nodesRef.current, edgesRef.current);
+  }, [emit]);
 
   return (
     <div className="awo-canvas-wrap">

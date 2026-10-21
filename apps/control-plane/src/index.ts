@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { fileURLToPath } from "node:url";
 import { authMiddleware, type AuthVariables } from "./middleware/auth";
 import { flowsRoutes } from "./routes/flows";
@@ -9,10 +10,19 @@ export const PACKAGE = "@awo/control-plane";
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
+app.use(
+  "*",
+  cors({
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    allowHeaders: ["Content-Type", "X-User-Id"],
+    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
+  }),
+);
+
 app.get("/health", (c) => c.json({ ok: true, package: PACKAGE }));
 
 app.use("*", async (c, next) => {
-  if (c.req.path === "/health") {
+  if (c.req.path === "/health" || c.req.method === "OPTIONS") {
     return next();
   }
   return authMiddleware(c, next);
