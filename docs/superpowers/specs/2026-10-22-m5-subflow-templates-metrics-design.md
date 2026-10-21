@@ -1,7 +1,7 @@
 # Design Spec: M5 — Subflow, Templates, Thin Metrics
 
 - Date: 2026-10-22
-- Status: approved for planning; plan in `docs/superpowers/plans/2026-10-22-m5-subflow-templates-metrics.md`
+- Status: approved; implemented on `feature/m5-subflow-templates-metrics`; plan in `docs/superpowers/plans/2026-10-22-m5-subflow-templates-metrics.md`
 - Parent: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (§11 M5; §4.1 Subflow; §5 use cases 5–6; §6 Observability thin v1)
 - Depends on: M1–M4 (graph publish, executor runs, pause/signal, roles + publish gate)
 - Architecture choice: **control-plane expands Subflow into a flat JobPayload graph** before dispatch (executor stays Subflow-agnostic)

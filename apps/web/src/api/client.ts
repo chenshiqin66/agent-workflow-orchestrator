@@ -109,6 +109,53 @@ export type CancelRunResult = {
   status: RunStatus;
 };
 
+export type TemplateSummary = {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  sourceFlowVersionId: string | null;
+};
+
+export type MetricsTotals = {
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  in_flight: number;
+  success_rate: number;
+  avg_latency_ms: number | null;
+  sum_cost_tokens: number;
+  avg_cost_tokens: number | null;
+};
+
+export type FlowMetrics = {
+  flow_id: string;
+  from: string;
+  to: string;
+  totals: MetricsTotals;
+  by_version: Array<{
+    flow_version_id: string;
+    version: number;
+    status: string;
+    runs: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    success_rate: number;
+    avg_latency_ms: number | null;
+    sum_cost_tokens: number;
+    avg_cost_tokens: number | null;
+  }>;
+};
+
+export type WorkspaceMetrics = {
+  from: string;
+  to: string;
+  flows: Array<{ flow_id: string; name: string; totals: MetricsTotals }>;
+};
+
+
 export type NodeDef = {
   id: string;
   typeKey: string;
@@ -357,6 +404,51 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: "PUT",
         body: JSON.stringify({ node_ids: nodeIds }),
       });
+    },
+    listTemplates() {
+      return request<TemplateSummary[]>(`/templates`);
+    },
+    createTemplate(body: {
+      name: string;
+      description?: string;
+      flow_version_id: string;
+    }) {
+      return request<{ id: string; name: string }>(`/templates`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    cloneTemplate(
+      id: string,
+      body: { project_id: string; name: string },
+    ) {
+      return request<{ id: string; name: string }>(`/templates/${id}/clone`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    getFlowMetrics(
+      flowId: string,
+      q?: { from?: string; to?: string; trigger?: string },
+    ) {
+      const params = new URLSearchParams();
+      if (q?.from) params.set("from", q.from);
+      if (q?.to) params.set("to", q.to);
+      if (q?.trigger) params.set("trigger", q.trigger);
+      const qs = params.toString();
+      return request<FlowMetrics>(
+        `/metrics/flows/${flowId}${qs ? `?${qs}` : ""}`,
+      );
+    },
+    getWorkspaceMetrics(q?: { from?: string; to?: string; trigger?: string }) {
+      const params = new URLSearchParams();
+      if (q?.from) params.set("from", q.from);
+      if (q?.to) params.set("to", q.to);
+      if (q?.trigger) params.set("trigger", q.trigger);
+      const qs = params.toString();
+      return request<WorkspaceMetrics>(
+        `/metrics/workspace${qs ? `?${qs}` : ""}`,
+      );
     },
   };
 }

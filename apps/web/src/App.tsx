@@ -10,6 +10,7 @@ import {
 import { saveThenPublish } from "./api/save-then-publish";
 import { SAMPLE_M2_GRAPH } from "./sample-m2-graph";
 import { SAMPLE_M3_GRAPH } from "./sample-m3-graph";
+import { SAMPLE_M5_GRAPH, SAMPLE_M5_HINT } from "./sample-m5-graph";
 import { TestRunPanel } from "./run/TestRunPanel";
 import { toggleBreakpointOnServer } from "./run/breakpoints";
 import {
@@ -18,7 +19,10 @@ import {
   roleForUser,
 } from "./auth/UserSwitcher";
 import { AssetsPanel } from "./assets/AssetsPanel";
+import { TemplatesPanel } from "./templates/TemplatesPanel";
+import { MetricsPanel } from "./metrics/MetricsPanel";
 import "./styles/m4.css";
+import "./styles/m5.css";
 
 const PROJECT_ID = "p_demo";
 const FLOW_ID_KEY = "awo.demoFlowId";
@@ -52,6 +56,10 @@ function withM2Sample(id: string): FlowGraph {
 
 function withM3Sample(id: string): FlowGraph {
   return { ...SAMPLE_M3_GRAPH, id };
+}
+
+function withM5Sample(id: string): FlowGraph {
+  return { ...SAMPLE_M5_GRAPH, id };
 }
 
 export function App() {
@@ -170,6 +178,12 @@ export function App() {
         : "已载入 M3 断点/审批样例（请先新建流程再保存发布）",
     );
   };
+  const onLoadM5Sample = () => {
+    const id = flowId ?? "local";
+    setGraph(withM5Sample(id));
+    setGraphEpoch((n) => n + 1);
+    setStatus(SAMPLE_M5_HINT);
+  };
 
   // Single source of truth: refresh from server whenever active run changes
   useEffect(() => {
@@ -211,6 +225,24 @@ export function App() {
     },
     [activeRunId, client],
   );
+
+  const onTemplateCloned = async (newFlowId: string) => {
+    setBusy(true);
+    try {
+      const detail = await client.getFlow(newFlowId);
+      applyLoaded(detail);
+      try {
+        localStorage.setItem(FLOW_ID_KEY, newFlowId);
+      } catch {
+        /* ignore */
+      }
+      setStatus(`已打开模板流程 ${detail.name}`);
+    } catch (e) {
+      setStatus(`打开模板流程失败: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onUserChange = (next: string) => {
     setUserId(next);
@@ -356,6 +388,9 @@ export function App() {
           <button type="button" disabled={busy} onClick={onLoadM3Sample}>
             载入 M3 样例
           </button>
+          <button type="button" disabled={busy} onClick={onLoadM5Sample}>
+            载入 M5 样例
+          </button>
           <button type="button" disabled={busy || !flowId} onClick={() => void onReload()}>
             重新加载
           </button>
@@ -405,6 +440,17 @@ export function App() {
             onAddType={onAddNodeType}
           />
           <AssetsPanel client={client} userId={userId} onStatus={setStatus} />
+          <TemplatesPanel
+            client={client}
+            projectId={PROJECT_ID}
+            onCloned={(id) => void onTemplateCloned(id)}
+            onStatus={setStatus}
+          />
+          <MetricsPanel
+            client={client}
+            flowId={flowId}
+            onStatus={setStatus}
+          />
         </aside>
       </div>
     </div>

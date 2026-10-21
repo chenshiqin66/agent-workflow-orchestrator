@@ -1,6 +1,6 @@
 # Agent Workflow Orchestrator
 
-拖拽式智能体/流程编排系统（M1：画布 + 控制面草稿/发布；M2：Python 执行器 + 试运行时间线；M3：断点 / signal / 人工审批；M4：角色 / 资产注册表 / 发布门禁）。
+拖拽式智能体/流程编排系统（M1：画布 + 控制面草稿/发布；M2：Python 执行器 + 试运行时间线；M3：断点 / signal / 人工审批；M4：角色 / 资产注册表 / 发布门禁；M5：Subflow / 模板 / 薄指标）。
 
 - **架构（方案 A）**：TypeScript 控制面 + 语言无关 Graph JSON + HTTP 执行器（回调）。
 - **Monorepo**：`apps/web`（Vite + React + XYFlow）、`apps/control-plane`（Hono + Drizzle + PostgreSQL）、`apps/executor-py`（FastAPI）、`packages/graph-schema` / `packages/run-protocol`。
@@ -9,6 +9,7 @@
 - **M2 实现计划**：`docs/superpowers/plans/2026-10-21-m2-python-executor-test-run-timeline.md`
 - **M3 设计 / 实现计划**：`docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md` · `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
 - **M4 设计 / 实现计划**：`docs/superpowers/specs/2026-10-22-m4-roles-assets-publish-gate-design.md` · `docs/superpowers/plans/2026-10-22-m4-roles-assets-publish-gate.md`
+- **M5 设计 / 实现计划**：`docs/superpowers/specs/2026-10-22-m5-subflow-templates-metrics-design.md` · `docs/superpowers/plans/2026-10-22-m5-subflow-templates-metrics.md`
 - **Run protocol 草图**：`docs/run-protocol-openapi.md`
 
 ## Prerequisites
@@ -69,8 +70,8 @@ Copy `apps/web/.env.example` → `apps/web/.env` if you need a non-default API b
 |---|---|
 | `@awo/graph-schema` | Shared Zod graph + content hash |
 | `@awo/run-protocol` | Run status / events / JobPayload / callback Zod |
-| `@awo/control-plane` | REST: flows, publish gate, test-runs (published/draft), assets, roles, signal/state/breakpoints, executor callbacks |
-| `@awo/web` | XYFlow canvas + 试运行 / SignalPanel / user switcher / node palette / assets panel |
+| `@awo/control-plane` | REST: flows, publish gate, test-runs, assets, roles, signal/state/breakpoints, templates, metrics, executor callbacks |
+| `@awo/web` | XYFlow canvas + 试运行 / SignalPanel / user switcher / node palette / assets / templates / metrics |
 | `apps/executor-py` | Python graph engine + `POST /v1/jobs` |
 
 ## M1 acceptance checklist
@@ -173,3 +174,17 @@ cd apps/executor-py && .venv/bin/python -m pytest
 ## License
 
 Private / unpublished.
+
+
+## M5 acceptance checklist
+
+1. **Subflow expand** — parent draft with `Subflow.config.flow_version_id` pointing at a **published** same-workspace child; developer draft test-run succeeds; timeline shows prefixed child node ids (`sf__…`).
+2. **Publish gate `subflow_refs`** — bad/missing child version → `400 publish_gate_failed` with check `subflow_refs`.
+3. **Templates** — developer `POST /templates` from published version; builder `POST /templates/:id/clone` → new draft flow with copied nodes; Web「从模板创建」opens it.
+4. **Thin metrics** — viewer `GET /metrics/flows/:id` and `/metrics/workspace`; UI「刷新指标」shows success_rate / avg_latency_ms / sum_cost_tokens.
+5. **Regression** — `pnpm test:m5` green; `test:m2` / `test:m3` / `test:m4` still green. No CRDT / WS / metrics warehouse.
+
+```bash
+pnpm test:m5
+```
+

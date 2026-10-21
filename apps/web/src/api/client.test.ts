@@ -114,3 +114,60 @@ describe("api client", () => {
     expect(tools[0]?.name).toBe("echo");
   });
 });
+
+  it("listTemplates GETs /templates", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/templates");
+      return new Response(
+        JSON.stringify([
+          {
+            id: "tpl1",
+            name: "Demo",
+            description: "",
+            createdAt: "2026-10-22T00:00:00.000Z",
+            sourceFlowVersionId: null,
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const client = createApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      userId: "u_viewer",
+    });
+    const list = await client.listTemplates();
+    expect(list[0]?.name).toBe("Demo");
+  });
+
+  it("getFlowMetrics GETs /metrics/flows/:id", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/metrics/flows/flow_1");
+      return new Response(
+        JSON.stringify({
+          flow_id: "flow_1",
+          from: "2026-10-15T00:00:00.000Z",
+          to: "2026-10-22T00:00:00.000Z",
+          totals: {
+            runs: 2,
+            succeeded: 1,
+            failed: 1,
+            cancelled: 0,
+            in_flight: 0,
+            success_rate: 0.5,
+            avg_latency_ms: 1000,
+            sum_cost_tokens: 10,
+            avg_cost_tokens: 5,
+          },
+          by_version: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const client = createApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      userId: "u_viewer",
+    });
+    const m = await client.getFlowMetrics("flow_1");
+    expect(m.totals.success_rate).toBe(0.5);
+    expect(m.flow_id).toBe("flow_1");
+  });
