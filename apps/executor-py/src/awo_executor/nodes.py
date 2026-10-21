@@ -1,4 +1,4 @@
-"""Node executors for the M2 subset."""
+"""Node executors for the M2/M3 subset."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ class NodeResult:
     output: dict[str, Any] = field(default_factory=dict)
     next_node_id: str | None = None
     terminal: bool = False
+    pause: bool = False
+    pause_kind: str | None = None  # breakpoint | approval | input
+    waiting_schema: dict[str, Any] | None = None
     emit_payload: dict[str, Any] | None = None
     error: str | None = None
     error_code: str | None = None
@@ -138,6 +141,40 @@ def execute_llm_stub(config: dict[str, Any], state: dict[str, Any]) -> NodeResul
     return NodeResult(ok=True, state=new_state, output={"llm_text": text})
 
 
+def execute_breakpoint(config: dict[str, Any], state: dict[str, Any]) -> NodeResult:
+    _ = config
+    return NodeResult(
+        ok=True,
+        state=state,
+        output={},
+        pause=True,
+        pause_kind="breakpoint",
+    )
+
+
+def execute_human_approval(config: dict[str, Any], state: dict[str, Any]) -> NodeResult:
+    _ = config
+    return NodeResult(
+        ok=True,
+        state=state,
+        output={},
+        pause=True,
+        pause_kind="approval",
+    )
+
+
+def execute_input(config: dict[str, Any], state: dict[str, Any]) -> NodeResult:
+    schema = config.get("schema") if isinstance(config.get("schema"), dict) else None
+    return NodeResult(
+        ok=True,
+        state=state,
+        output={},
+        pause=True,
+        pause_kind="input",
+        waiting_schema=schema,
+    )
+
+
 def execute_unsupported(node_type: str, state: dict[str, Any]) -> NodeResult:
     return NodeResult(
         ok=False,
@@ -160,6 +197,14 @@ def _pick_edge_target(edges: list[dict[str, Any]], kind: str) -> str | None:
             if isinstance(target, str) and target:
                 return target
     return None
+
+
+def pick_resume_edge(edges: list[dict[str, Any]], kind: str) -> str | None:
+    """Pick an edge for approval resume; ``failure`` falls back to ``default``."""
+    target = _pick_edge_target(edges, kind)
+    if target is None and kind == "failure":
+        target = _pick_edge_target(edges, "default")
+    return target
 
 
 def pick_default_next(edges: list[dict[str, Any]]) -> str | None:

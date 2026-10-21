@@ -6,8 +6,11 @@ from awo_executor.expressions import ExpressionError, eval_expression
 from awo_executor.nodes import (
     NodeResult,
     execute_branch,
+    execute_breakpoint,
     execute_emit,
     execute_end,
+    execute_human_approval,
+    execute_input,
     execute_llm_stub,
     execute_start,
     execute_transform,
@@ -172,3 +175,29 @@ def test_safe_expressions(expr, state, expected):
 def test_unsafe_expressions_rejected(expr):
     with pytest.raises(ExpressionError):
         eval_expression(expr, {"ok": True})
+
+
+def test_execute_breakpoint_pauses():
+    result = execute_breakpoint({}, {"x": 1})
+    assert result.ok
+    assert result.pause is True
+    assert result.pause_kind == "breakpoint"
+    assert result.state == {"x": 1}
+
+
+def test_execute_human_approval_pauses():
+    result = execute_human_approval({"prompt": "ok?"}, {"ok": True})
+    assert result.ok
+    assert result.pause is True
+    assert result.pause_kind == "approval"
+    assert result.state == {"ok": True}
+
+
+def test_execute_input_pauses_with_schema():
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    result = execute_input({"schema": schema}, {"a": 1})
+    assert result.ok
+    assert result.pause is True
+    assert result.pause_kind == "input"
+    assert result.waiting_schema == schema
+    assert result.state == {"a": 1}

@@ -1,0 +1,83 @@
+{
+  "id": "fv_m3_approval",
+  "state_schema": { "type": "object", "properties": {} },
+  "nodes": [
+    {
+      "id": "n_start",
+      "type": "Start",
+      "config": {},
+      "ui": { "x": 0, "y": 0 }
+    },
+    {
+      "id": "n_approve",
+      "type": "HumanApproval",
+      "config": { "prompt": "Approve?" },
+      "ui": { "x": 160, "y": 0 }
+    },
+    {
+      "id": "n_approved",
+      "type": "Transform",
+      "config": { "assignments": { "path": "approved" } },
+      "ui": { "x": 320, "y": -40 }
+    },
+    {
+      "id": "n_rejected",
+      "type": "Transform",
+      "config": { "assignments": { "path": "rejected" } },
+      "ui": { "x": 320, "y": 40 }
+    },
+    {
+      "id": "n_end",
+      "type": "End",
+      "config": {},
+      "ui": { "x": 480, "y": 0 }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "n_start",
+      "sourceHandle": "out",
+      "target": "n_approve",
+      "targetHandle": "in",
+      "kind": "default",
+      "label": ""
+    },
+    {
+      "id": "e2",
+      "source": "n_approve",
+      "sourceHandle": "success",
+      "target": "n_approved",
+      "targetHandle": "in",
+      "kind": "success",
+      "label": "approve"
+    },
+    {
+      "id": "e3",
+      "source": "n_approve",
+      "sourceHandle": "failure",
+      "target": "n_rejected",
+      "targetHandle": "in",
+      "kind": "failure",
+      "label": "reject"
+    },
+    {
+      "id": "e4",
+      "source": "n_approved",
+      "sourceHandle": "out",
+      "target": "n_end",
+      "targetHandle": "in",
+      "kind": "default",
+      "label": ""
+    },
+    {
+      "id": "e5",
+      "source": "n_rejected",
+      "sourceHandle": "out",
+      "target": "n_end",
+      "targetHandle": "in",
+      "kind": "default",
+      "label": ""
+    }
+  ]
+}
