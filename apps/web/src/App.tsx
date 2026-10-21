@@ -7,6 +7,7 @@ import { SAMPLE_GRAPH } from "./sample-graph";
 import { SAMPLE_M2_GRAPH } from "./sample-m2-graph";
 import { SAMPLE_M3_GRAPH } from "./sample-m3-graph";
 import { TestRunPanel } from "./run/TestRunPanel";
+import { toggleBreakpointOnServer } from "./run/breakpoints";
 
 const PROJECT_ID = "p_demo";
 const FLOW_ID_KEY = "awo.demoFlowId";
@@ -144,6 +145,26 @@ export function App() {
     );
   };
 
+  // Single source of truth: refresh from server whenever active run changes
+  useEffect(() => {
+    if (!activeRunId) {
+      setBreakpointNodeIds([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.getBreakpoints(activeRunId);
+        if (!cancelled) setBreakpointNodeIds(res.node_ids);
+      } catch {
+        /* run may not be ready yet */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRunId]);
+
   const onToggleBreakpoint = useCallback(
     async (nodeId: string) => {
       if (!activeRunId) {
@@ -151,14 +172,10 @@ export function App() {
         return;
       }
       try {
-        const set = new Set(breakpointNodeIds);
-        if (set.has(nodeId)) set.delete(nodeId);
-        else set.add(nodeId);
-        const next = [...set].sort();
-        const res = await api.putBreakpoints(activeRunId, next);
-        setBreakpointNodeIds(res.node_ids);
+        const next = await toggleBreakpointOnServer(api, activeRunId, nodeId);
+        setBreakpointNodeIds(next);
         setStatus(
-          res.node_ids.includes(nodeId)
+          next.includes(nodeId)
             ? `已为 ${nodeId} 设置断点`
             : `已清除 ${nodeId} 断点`,
         );
@@ -166,7 +183,7 @@ export function App() {
         setStatus(`断点切换失败: ${(e as Error).message}`);
       }
     },
-    [activeRunId, breakpointNodeIds],
+    [activeRunId],
   );
 
   const onSave = async () => {
@@ -302,7 +319,8 @@ export function App() {
           busy={busy}
           onStatus={setStatus}
           selectedNodeId={selectedNodeId}
-          onBreakpointsChange={setBreakpointNodeIds}
+          breakpointNodeIds={breakpointNodeIds}
+          onToggleBreakpoint={onToggleBreakpoint}
           onRunIdChange={setActiveRunId}
         />
       </div>

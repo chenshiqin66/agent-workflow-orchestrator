@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ApiClient, RunDetail } from "../api/client";
+import {
+  formatCheckpointState,
+  pauseEpisodeKey,
+  shouldSeedStateEditor,
+} from "./stateEditorSeed";
 
 type Props = {
   run: RunDetail;
@@ -17,12 +22,33 @@ export function StateEditor({
   onError,
 }: Props) {
   const [text, setText] = useState("{}");
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const episodeKeyRef = useRef<string | null>(null);
+
+  const episodeKey = pauseEpisodeKey(run);
+  // Stabilize against poll object-identity churn on checkpoint.state
+  const serializedState = useMemo(
+    () => formatCheckpointState(run.checkpoint?.state),
+    [run.checkpoint?.state],
+  );
 
   useEffect(() => {
-    const state = run.checkpoint?.state ?? {};
-    setText(JSON.stringify(state, null, 2));
-  }, [run.id, run.checkpoint?.state, run.status]);
+    const action = shouldSeedStateEditor({
+      episodeKey,
+      prevEpisodeKey: episodeKeyRef.current,
+      dirty,
+    });
+    if (action === "keep") return;
+    episodeKeyRef.current = episodeKey;
+    if (action === "clear") {
+      setDirty(false);
+      setText("{}");
+      return;
+    }
+    setDirty(false);
+    setText(serializedState);
+  }, [episodeKey, serializedState, dirty]);
 
   if (run.status !== "paused") return null;
 
@@ -47,6 +73,7 @@ export function StateEditor({
       await client.patchRunState(run.id, {
         state: parsed as Record<string, unknown>,
       });
+      setDirty(false);
       onDone?.();
     } catch (e) {
       onError?.((e as Error).message);
@@ -66,7 +93,10 @@ export function StateEditor({
         rows={6}
         spellCheck={false}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setDirty(true);
+          setText(e.target.value);
+        }}
         disabled={busy || saving}
       />
       <button

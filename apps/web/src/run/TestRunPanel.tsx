@@ -17,8 +17,10 @@ type Props = {
   onStatus?: (msg: string) => void;
   /** Selected canvas node id for breakpoint toggle */
   selectedNodeId?: string | null;
-  /** Notify parent of active breakpoint node ids (for canvas highlight) */
-  onBreakpointsChange?: (nodeIds: string[]) => void;
+  /** Shared breakpoint list (owned by App; single source of truth) */
+  breakpointNodeIds?: string[];
+  /** Toggle via App (GET→toggle→PUT→GET); canvas + panel must share this */
+  onToggleBreakpoint?: (nodeId: string) => void | Promise<void>;
   /** Prefer M3 sample input when true */
   preferM3Input?: boolean;
   /** Notify parent when active run id changes (for canvas BP toggle) */
@@ -58,7 +60,8 @@ export function TestRunPanel({
   busy = false,
   onStatus,
   selectedNodeId = null,
-  onBreakpointsChange,
+  breakpointNodeIds = [],
+  onToggleBreakpoint,
   preferM3Input = false,
   onRunIdChange,
 }: Props) {
@@ -68,7 +71,6 @@ export function TestRunPanel({
   const [runId, setRunId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [breakpointIds, setBreakpointIds] = useState<string[]>([]);
   const [bpBusy, setBpBusy] = useState(false);
 
   const {
@@ -86,29 +88,6 @@ export function TestRunPanel({
 
   const canRun =
     Boolean(flowId) && Boolean(publishedVersionId) && !busy && !starting;
-
-  // Load breakpoints whenever run id is set / changes
-  useEffect(() => {
-    if (!runId) {
-      setBreakpointIds([]);
-      onBreakpointsChange?.([]);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await client.getBreakpoints(runId);
-        if (cancelled) return;
-        setBreakpointIds(res.node_ids);
-        onBreakpointsChange?.(res.node_ids);
-      } catch {
-        /* ignore until run exists server-side */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, onBreakpointsChange, runId]);
 
   const onStart = useCallback(async () => {
     if (!flowId || !publishedVersionId) {
@@ -161,39 +140,22 @@ export function TestRunPanel({
     }
   }, [client, onStatus, refresh, runId]);
 
-  const onToggleBreakpoint = useCallback(async () => {
+  const onPanelToggleBreakpoint = useCallback(async () => {
     if (!runId || !selectedNodeId) {
       setLocalError("请先试运行并选中画布节点，再切换断点");
       return;
     }
+    if (!onToggleBreakpoint) return;
     setBpBusy(true);
     setLocalError(null);
     try {
-      const set = new Set(breakpointIds);
-      if (set.has(selectedNodeId)) set.delete(selectedNodeId);
-      else set.add(selectedNodeId);
-      const next = [...set].sort();
-      const res = await client.putBreakpoints(runId, next);
-      setBreakpointIds(res.node_ids);
-      onBreakpointsChange?.(res.node_ids);
-      onStatus?.(
-        res.node_ids.includes(selectedNodeId)
-          ? `已为 ${selectedNodeId} 设置断点`
-          : `已清除 ${selectedNodeId} 断点`,
-      );
+      await onToggleBreakpoint(selectedNodeId);
     } catch (e) {
       setLocalError((e as Error).message);
     } finally {
       setBpBusy(false);
     }
-  }, [
-    breakpointIds,
-    client,
-    onBreakpointsChange,
-    onStatus,
-    runId,
-    selectedNodeId,
-  ]);
+  }, [onToggleBreakpoint, runId, selectedNodeId]);
 
   const status = run?.status ?? null;
   const err = localError ?? pollError;
@@ -248,15 +210,15 @@ export function TestRunPanel({
         <button
           type="button"
           className="awo-run-panel__secondary awo-run-panel__bp"
-          disabled={!runId || !selectedNodeId || bpBusy}
-          onClick={() => void onToggleBreakpoint()}
+          disabled={!runId || !selectedNodeId || bpBusy || !onToggleBreakpoint}
+          onClick={() => void onPanelToggleBreakpoint()}
           title={
             selectedNodeId
               ? `切换断点: ${selectedNodeId}`
               : "先选中画布节点"
           }
         >
-          {selectedNodeId && breakpointIds.includes(selectedNodeId)
+          {selectedNodeId && breakpointNodeIds.includes(selectedNodeId)
             ? "清除断点"
             : "设断点"}
         </button>
@@ -265,7 +227,7 @@ export function TestRunPanel({
       {selectedNodeId && (
         <div className="awo-run-panel__hint-line">
           选中节点: <code>{selectedNodeId}</code>
-          {breakpointIds.includes(selectedNodeId) ? " · 有断点" : ""}
+          {breakpointNodeIds.includes(selectedNodeId) ? " · 有断点" : ""}
         </div>
       )}
 
