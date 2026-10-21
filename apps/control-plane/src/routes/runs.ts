@@ -47,6 +47,10 @@ runsRoutes.post("/flows/:flowId/test-runs", async (c) => {
     );
     return c.json(result, 201);
   } catch (e) {
+    const body = (e as { body?: unknown }).body;
+    if (body) {
+      return c.json(body, 400);
+    }
     const status = (e as { status?: number }).status ?? 500;
     return c.json({ error: (e as Error).message }, status as 400);
   }

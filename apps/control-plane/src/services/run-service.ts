@@ -18,6 +18,9 @@ import {
   runs,
 } from "../db/schema";
 import { pushJobToExecutor } from "./executor-client";
+import type { FlowGraph } from "@awo/graph-schema";
+import { expandSubflows, SubflowExpandError } from "./subflow-expand";
+import { resolvePublishedForWorkspace } from "./subflow-resolve";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -142,6 +145,27 @@ export async function createTestRun(
       throw httpError("published version missing or not published", 400);
     }
     versionId = published.id;
+  }
+
+  const versionRow = await db.query.flowVersions.findFirst({
+    where: eq(flowVersions.id, versionId),
+  });
+  if (!versionRow) {
+    throw httpError("flow version not found", 404);
+  }
+  try {
+    await expandSubflows(versionRow.graphJson as FlowGraph, {
+      resolvePublished: (id) => resolvePublishedForWorkspace(id, workspaceId),
+    });
+  } catch (e) {
+    if (e instanceof SubflowExpandError) {
+      const err = httpError(e.message, 400) as Error & {
+        body?: { error: string; details?: Record<string, unknown> };
+      };
+      err.body = { error: e.code, details: e.details };
+      throw err;
+    }
+    throw e;
   }
 
   const runId = newId("run");

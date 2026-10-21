@@ -10,6 +10,8 @@ import {
   runs,
   tools,
 } from "../db/schema";
+import { expandSubflows, SubflowExpandError } from "./subflow-expand";
+import { resolvePublishedForWorkspace } from "./subflow-resolve";
 
 export type GateCheck = { id: string; ok: boolean; message?: string };
 export type GateResult = { ok: boolean; checks: GateCheck[] };
@@ -214,6 +216,23 @@ export async function evaluatePublishGate(args: {
     ok: roleProblems.length === 0,
     message: roleProblems[0],
   });
+
+  try {
+    await expandSubflows(draftGraph, {
+      resolvePublished: (id) => resolvePublishedForWorkspace(id, workspaceId),
+    });
+    checks.push({ id: "subflow_refs", ok: true });
+  } catch (e) {
+    const err = e as SubflowExpandError;
+    checks.push({
+      id: "subflow_refs",
+      ok: false,
+      message:
+        err instanceof SubflowExpandError
+          ? `${err.code}: ${err.message}`
+          : "subflow expand failed",
+    });
+  }
 
   return { ok: checks.every((c) => c.ok), checks };
 }

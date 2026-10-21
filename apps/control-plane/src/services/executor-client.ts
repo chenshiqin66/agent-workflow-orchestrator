@@ -2,7 +2,10 @@ import type { JobPayload } from "@awo/run-protocol";
 import { CheckpointSchema } from "@awo/run-protocol";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { flowVersions, runBreakpoints, runEvents, runs } from "../db/schema";
+import { flowVersions, flows, projects, runBreakpoints, runEvents, runs } from "../db/schema";
+import type { FlowGraph } from "@awo/graph-schema";
+import { expandSubflows, SubflowExpandError } from "./subflow-expand";
+import { resolvePublishedForWorkspace } from "./subflow-resolve";
 
 function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -64,6 +67,37 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
     );
   const breakpoints = bpRows.map((r) => r.nodeId);
 
+  const flow = await db.query.flows.findFirst({
+    where: eq(flows.id, version.flowId),
+  });
+  if (!flow) {
+    await markDispatchFailed(runId, "flow not found for version");
+    return;
+  }
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, flow.projectId),
+  });
+  if (!project) {
+    await markDispatchFailed(runId, "project not found for flow");
+    return;
+  }
+  let flatGraph: FlowGraph;
+  try {
+    flatGraph = await expandSubflows(version.graphJson as FlowGraph, {
+      resolvePublished: (id) =>
+        resolvePublishedForWorkspace(id, project.workspaceId),
+    });
+  } catch (err) {
+    const message =
+      err instanceof SubflowExpandError
+        ? `${err.code}: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : "subflow expand failed";
+    await markDispatchFailed(runId, message);
+    return;
+  }
+
   let checkpoint: JobPayload["checkpoint"] | undefined;
   // Resume path: queued run with a stored checkpoint (first create has null).
   // Never cold-start when a checkpoint was expected but is unparseable.
@@ -85,7 +119,7 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
     const payload: JobPayload = {
       run_id: run.id,
       flow_version_id: version.id,
-      graph: version.graphJson as JobPayload["graph"],
+      graph: flatGraph as JobPayload["graph"],
       input: (run.inputJson ?? {}) as Record<string, unknown>,
       callback_base_url: callbackBaseUrl(),
       token,

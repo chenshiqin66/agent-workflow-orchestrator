@@ -63,3 +63,145 @@ describe("evaluatePublishGate", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("evaluatePublishGate subflow_refs", () => {
+  it("fails subflow_refs for missing flow_version_id target", async () => {
+    const { evaluatePublishGate } = await import("./publish-gate");
+    const result = await evaluatePublishGate({
+      workspaceId: "ws_demo",
+      flowId: "flow_x",
+      draftGraph: {
+        id: "fv",
+        state_schema: { type: "object", properties: {} },
+        nodes: [
+          { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+          {
+            id: "sf",
+            type: "Subflow",
+            config: { flow_version_id: "fv_missing_xyz" },
+            ui: { x: 40, y: 0 },
+          },
+          { id: "e", type: "End", config: {}, ui: { x: 80, y: 0 } },
+        ],
+        edges: [
+          {
+            id: "e0",
+            source: "s",
+            sourceHandle: "out",
+            target: "sf",
+            targetHandle: "in",
+            kind: "default",
+            label: "",
+          },
+          {
+            id: "e1",
+            source: "sf",
+            sourceHandle: "out",
+            target: "e",
+            targetHandle: "in",
+            kind: "default",
+            label: "",
+          },
+        ],
+      },
+      draftSchemaHash: "deadbeef",
+      publisherRole: "builder",
+      publishedVersionId: null,
+    });
+    expect(result.ok).toBe(false);
+    const sf = result.checks.find((c) => c.id === "subflow_refs");
+    expect(sf?.ok).toBe(false);
+    expect(sf?.message).toMatch(/subflow_/);
+  });
+
+  it("passes subflow_refs when Subflow points at published child", async () => {
+    // Arrange: publish a tiny child via DB + bootstrap gate path through API would be heavy;
+    // insert published version rows directly for gate unit test.
+    const { db } = await import("../db/client");
+    const { flows, flowVersions } = await import("../db/schema");
+    const { hashGraph } = await import("@awo/graph-schema");
+    const childGraph = {
+      id: "fv_gate_child",
+      state_schema: { type: "object", properties: {} },
+      nodes: [
+        { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+        { id: "e", type: "End", config: {}, ui: { x: 1, y: 0 } },
+      ],
+      edges: [
+        {
+          id: "e0",
+          source: "s",
+          sourceHandle: "out",
+          target: "e",
+          targetHandle: "in",
+          kind: "default",
+          label: "",
+        },
+      ],
+    };
+    const flowId = `flow_gate_child_${Date.now()}`;
+    const fvId = `fv_gate_child_${Date.now()}`;
+    childGraph.id = fvId;
+    await db.insert(flows).values({
+      id: flowId,
+      projectId: "p_demo",
+      name: "gate child",
+      latestDraftVersionId: null,
+      publishedVersionId: fvId,
+    });
+    await db.insert(flowVersions).values({
+      id: fvId,
+      flowId,
+      version: 1,
+      status: "published",
+      graphJson: childGraph,
+      schemaHash: hashGraph(childGraph as never),
+      createdBy: "u_dev",
+    });
+
+    const { evaluatePublishGate } = await import("./publish-gate");
+    const result = await evaluatePublishGate({
+      workspaceId: "ws_demo",
+      flowId: "flow_parent_gate",
+      draftGraph: {
+        id: "fv_parent",
+        state_schema: { type: "object", properties: {} },
+        nodes: [
+          { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+          {
+            id: "sf",
+            type: "Subflow",
+            config: { flow_version_id: fvId },
+            ui: { x: 40, y: 0 },
+          },
+          { id: "e", type: "End", config: {}, ui: { x: 80, y: 0 } },
+        ],
+        edges: [
+          {
+            id: "e0",
+            source: "s",
+            sourceHandle: "out",
+            target: "sf",
+            targetHandle: "in",
+            kind: "default",
+            label: "",
+          },
+          {
+            id: "e1",
+            source: "sf",
+            sourceHandle: "out",
+            target: "e",
+            targetHandle: "in",
+            kind: "default",
+            label: "",
+          },
+        ],
+      },
+      draftSchemaHash: "abc",
+      publisherRole: "builder",
+      publishedVersionId: null,
+    });
+    expect(result.checks.find((c) => c.id === "subflow_refs")?.ok).toBe(true);
+    expect(result.ok).toBe(true);
+  });
+});
