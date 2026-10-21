@@ -21,6 +21,35 @@
 
 ## Local setup
 
+### One command（推荐）
+
+macOS / Linux / **WSL**：
+
+```bash
+pnpm dev:up
+# 或: bash scripts/dev-up.sh
+```
+
+原生 Windows（PowerShell，需已装 Node / pnpm / Docker Desktop / Python ≥ 3.11）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1
+```
+
+脚本会：检查依赖 → `pnpm install` → 启动 Postgres → migrate/seed → 准备 executor venv → 后台启动 API（`:8787`）、executor（`:8792`）、web（`:5173`）。日志与 PID 在 `.logs/`。浏览器打开 `http://localhost:5173`。
+
+停止：
+
+```bash
+kill $(awk '{print $2}' .logs/pids.txt)
+```
+
+默认环境变量：`DATABASE_URL=postgres://awo:awo@localhost:5432/awo`、`EXECUTOR_TOKEN=dev`、`EXECUTOR_URL=http://127.0.0.1:8792`、`CALLBACK_BASE_URL=http://127.0.0.1:8787`、`PORT=8787`。Web 使用 `apps/web/.env`（缺省时从 `.env.example` 复制，`VITE_API_BASE=http://localhost:8787`）。
+
+> 说明：`pnpm dev:executor` 仍默认 `:8790`；一键脚本为避免冲突改用 **8792**。
+
+### Manual steps
+
 ```bash
 # 1. Install JS workspace
 pnpm install

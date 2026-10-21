@@ -2,6 +2,7 @@
   "name": "agent-workflow-orchestrator",
   "private": true,
   "scripts": {
+    "dev:up": "bash scripts/dev-up.sh",
     "dev:api": "pnpm --filter @awo/control-plane dev",
     "dev:web": "pnpm --filter @awo/web dev",
     "test": "pnpm -r test",
