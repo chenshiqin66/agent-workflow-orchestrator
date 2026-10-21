@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FlowGraph } from "@awo/graph-schema";
 import { FlowCanvas } from "./canvas/FlowCanvas";
 import { api } from "./api/client";
+import { saveThenPublish } from "./api/save-then-publish";
 import { SAMPLE_GRAPH } from "./sample-graph";
 
 const PROJECT_ID = "p_demo";
@@ -134,14 +135,17 @@ export function App() {
       return;
     }
     setBusy(true);
-    setStatus("发布中…");
+    setStatus("保存草稿并发布…");
     try {
-      const result = await api.publish(flowId);
-      setPublishedVersionId(result.versionId);
+      // Always persist the in-memory canvas before publish so we never
+      // publish a stale server draft after unsaved edits.
+      const { saved, published } = await saveThenPublish(api, flowId, graph);
+      setDraftHash(saved.schemaHash);
+      setPublishedVersionId(published.versionId);
       const detail = await api.getFlow(flowId);
       setPublishedVersionId(detail.publishedVersionId);
       setStatus(
-        `已发布 ${result.versionId}（publishedVersionId=${detail.publishedVersionId}）`,
+        `已保存并发布 ${published.versionId}（hash=${saved.schemaHash.slice(0, 12)}…）`,
       );
     } catch (e) {
       setStatus(`发布失败: ${(e as Error).message}`);
