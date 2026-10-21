@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@awo/graph-schema": "workspace:*",
@@ -16,6 +20,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "dotenv": "^18.0.8",
+    "drizzle-kit": "^0.31.11",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
