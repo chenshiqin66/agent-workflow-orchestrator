@@ -1,5 +1,6 @@
 import { and, eq, max } from "drizzle-orm";
 import { requireRole, roleAtLeast } from "../auth/roles";
+import { evaluatePublishGate } from "./publish-gate";
 import { parseFlowGraph, hashGraph, type FlowGraph } from "@awo/graph-schema";
 import { db } from "../db/client";
 import {
@@ -236,6 +237,25 @@ export async function publishFlow(
     const graphWithId: FlowGraph = { ...graph, id: publishedId };
     // schemaHash ignores graph.id — same topology as draft yields same hash.
     const schemaHash = hashGraph(graphWithId);
+
+    const gate = await evaluatePublishGate({
+      workspaceId,
+      flowId,
+      draftGraph: graph,
+      draftSchemaHash: schemaHash,
+      publisherRole: role,
+      publishedVersionId: lockedFlow.publishedVersionId,
+    });
+    if (!gate.ok) {
+      const err = new Error("publish_gate_failed") as Error & {
+        status: number;
+        body: { error: string; checks: typeof gate.checks };
+      };
+      err.status = 400;
+      err.body = { error: "publish_gate_failed", checks: gate.checks };
+      throw err;
+    }
+
     const versionNum = await nextVersionNumber(flowId, tx);
 
     await tx.insert(flowVersions).values({
