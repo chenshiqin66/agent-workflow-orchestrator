@@ -247,3 +247,58 @@
   border: 1px solid #e2e8f0;
   color: #0f172a;
 }
+
+
+.awo-run-badge--paused {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.awo-signal,
+.awo-state-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.awo-signal__banner {
+  font-size: 12px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.awo-signal__actions,
+.awo-signal__input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.awo-signal__input {
+  flex-direction: column;
+}
+
+.awo-run-panel__bp {
+  border-color: rgba(147, 51, 234, 0.4) !important;
+  color: #6b21a8 !important;
+}
+
+.awo-run-panel__hint-line {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.awo-timeline__type--breakpoint_hit,
+.awo-timeline__type--waiting_signal {
+  color: #b45309;
+}
+
+.awo-timeline__type--signal_received,
+.awo-timeline__type--state_patched {
+  color: #7c3aed;
+}

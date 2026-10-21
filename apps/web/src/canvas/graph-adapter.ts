@@ -12,6 +12,8 @@ export type AwoNodeData = {
   config: Record<string, unknown>;
   variant?: string;
   label: string;
+  /** UI-only: dynamic breakpoint highlight (not persisted in graph JSON) */
+  hasBreakpoint?: boolean;
 };
 
 export type AwoEdgeData = {

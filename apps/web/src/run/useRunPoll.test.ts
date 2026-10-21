@@ -20,14 +20,20 @@ function ev(seq: number, eventType = "log"): RunEvent {
 }
 
 describe("useRunPoll helpers", () => {
-  it("isActiveRunStatus covers queued/running/cancel_requested only", () => {
+  it("isActiveRunStatus covers queued/running/paused/cancel_requested", () => {
     expect(isActiveRunStatus("queued")).toBe(true);
     expect(isActiveRunStatus("running")).toBe(true);
+    expect(isActiveRunStatus("paused")).toBe(true);
     expect(isActiveRunStatus("cancel_requested")).toBe(true);
     expect(isActiveRunStatus("succeeded")).toBe(false);
     expect(isActiveRunStatus("failed")).toBe(false);
     expect(isActiveRunStatus("cancelled")).toBe(false);
     expect(isActiveRunStatus(null)).toBe(false);
+  });
+
+  it("nextPollingState stays active for paused", () => {
+    expect(nextPollingState({ fetchOk: true, status: "paused" })).toBe(true);
+    expect(nextPollingState({ fetchOk: false, status: "paused" })).toBe(true);
   });
 
   it("mergeRunEvents appends by seq without duplicates", () => {

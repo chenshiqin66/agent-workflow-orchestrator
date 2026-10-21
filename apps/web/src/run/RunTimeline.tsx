@@ -7,6 +7,24 @@ type Props = {
   graph?: FlowGraph | null;
 };
 
+const EVENT_LABELS: Record<string, string> = {
+  breakpoint_hit: "断点命中",
+  waiting_signal: "等待信号",
+  signal_received: "已收信号",
+  state_patched: "状态已改",
+  run_started: "运行开始",
+  run_finished: "运行结束",
+  node_started: "节点开始",
+  node_finished: "节点完成",
+  node_failed: "节点失败",
+  emit: "Emit",
+  log: "日志",
+};
+
+function eventLabel(eventType: string): string {
+  return EVENT_LABELS[eventType] ?? eventType;
+}
+
 function nodeTypeMap(graph?: FlowGraph | null): Map<string, string> {
   const m = new Map<string, string>();
   if (!graph) return m;
@@ -67,8 +85,11 @@ export function RunTimeline({ events, graph }: Props) {
             <div className="awo-timeline__meta">
               <span className="awo-timeline__seq">#{e.seq}</span>
               <span className="awo-timeline__time">{formatTime(e.ts)}</span>
-              <span className={`awo-timeline__type awo-timeline__type--${e.eventType}`}>
-                {e.eventType}
+              <span
+                className={`awo-timeline__type awo-timeline__type--${e.eventType}`}
+                title={e.eventType}
+              >
+                {eventLabel(e.eventType)}
               </span>
               {e.nodeId && (
                 <span className="awo-timeline__node">

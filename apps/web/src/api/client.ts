@@ -45,10 +45,27 @@ export type PublishResult = {
 export type RunStatus =
   | "queued"
   | "running"
+  | "paused"
   | "succeeded"
   | "failed"
   | "cancelled"
   | "cancel_requested";
+
+export type PauseReason = "breakpoint" | "approval" | "input";
+
+export type RunCheckpoint = {
+  node_id: string;
+  state: Record<string, unknown>;
+  pause_kind: PauseReason;
+  resume_edge_kind?: "success" | "failure" | "default";
+  pending_input?: Record<string, unknown>;
+};
+
+export type SignalKind = "approve" | "reject" | "input" | "resume";
+
+export type BreakpointsResult = {
+  node_ids: string[];
+};
 
 export type CreateTestRunResult = {
   id: string;
@@ -69,6 +86,8 @@ export type RunDetail = {
   costTokens: number | null;
   createdBy: string;
   createdAt: string;
+  pauseReason?: PauseReason | string | null;
+  checkpoint?: RunCheckpoint | null;
 };
 
 export type RunEvent = {
@@ -196,6 +215,33 @@ export function createApiClient(options: ApiClientOptions = {}) {
     cancelRun(runId: string) {
       return request<CancelRunResult>(`/runs/${runId}/cancel`, {
         method: "POST",
+      });
+    },
+    signalRun(
+      runId: string,
+      body: { kind: SignalKind; payload?: unknown },
+    ) {
+      return request<RunDetail>(`/runs/${runId}/signal`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    patchRunState(
+      runId: string,
+      body: { state?: object; patch?: object },
+    ) {
+      return request<RunDetail>(`/runs/${runId}/state`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    },
+    getBreakpoints(runId: string) {
+      return request<BreakpointsResult>(`/runs/${runId}/breakpoints`);
+    },
+    putBreakpoints(runId: string, nodeIds: string[]) {
+      return request<BreakpointsResult>(`/runs/${runId}/breakpoints`, {
+        method: "PUT",
+        body: JSON.stringify({ node_ids: nodeIds }),
       });
     },
   };

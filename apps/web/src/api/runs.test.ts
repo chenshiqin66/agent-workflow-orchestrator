@@ -136,4 +136,78 @@ describe("api client — runs", () => {
     const result = await client.cancelRun("run_abc");
     expect(result.status).toBe("cancel_requested");
   });
+
+  it("createApiClient.signalRun posts kind resume", async () => {
+    const calls: string[] = [];
+    const client = createApiClient({
+      fetchImpl: async (url, init) => {
+        calls.push(`${init?.method} ${url}`);
+        return new Response(JSON.stringify({ id: "run_1", status: "queued" }), {
+          status: 200,
+        });
+      },
+    });
+    await client.signalRun("run_1", { kind: "resume" });
+    expect(calls[0]).toContain("POST");
+    expect(calls[0]).toContain("/runs/run_1/signal");
+  });
+
+  it("patchRunState PATCHes /runs/:id/state", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:8787/runs/run_1/state");
+      expect(init?.method).toBe("PATCH");
+      expect(JSON.parse(String(init?.body))).toEqual({ state: { a: 1 } });
+      return new Response(
+        JSON.stringify({
+          id: "run_1",
+          status: "paused",
+          pauseReason: "breakpoint",
+          checkpoint: {
+            node_id: "n_bp",
+            state: { a: 1 },
+            pause_kind: "breakpoint",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const client = createApiClient({
+      baseUrl: "http://localhost:8787",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const result = await client.patchRunState("run_1", { state: { a: 1 } });
+    expect(result.status).toBe("paused");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("getBreakpoints and putBreakpoints hit /runs/:id/breakpoints", async () => {
+    const urls: string[] = [];
+    const methods: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      urls.push(String(input));
+      methods.push(init?.method ?? "GET");
+      if ((init?.method ?? "GET") === "PUT") {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          node_ids: ["n_a", "n_b"],
+        });
+      }
+      return new Response(JSON.stringify({ node_ids: ["n_a", "n_b"] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const client = createApiClient({
+      baseUrl: "http://localhost:8787",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const got = await client.getBreakpoints("run_1");
+    expect(got.node_ids).toEqual(["n_a", "n_b"]);
+    const put = await client.putBreakpoints("run_1", ["n_a", "n_b"]);
+    expect(put.node_ids).toEqual(["n_a", "n_b"]);
+    expect(urls).toEqual([
+      "http://localhost:8787/runs/run_1/breakpoints",
+      "http://localhost:8787/runs/run_1/breakpoints",
+    ]);
+    expect(methods).toEqual(["GET", "PUT"]);
+  });
 });

@@ -5,6 +5,7 @@ import { api } from "./api/client";
 import { saveThenPublish } from "./api/save-then-publish";
 import { SAMPLE_GRAPH } from "./sample-graph";
 import { SAMPLE_M2_GRAPH } from "./sample-m2-graph";
+import { SAMPLE_M3_GRAPH } from "./sample-m3-graph";
 import { TestRunPanel } from "./run/TestRunPanel";
 
 const PROJECT_ID = "p_demo";
@@ -27,6 +28,10 @@ function withM2Sample(id: string): FlowGraph {
   return { ...SAMPLE_M2_GRAPH, id };
 }
 
+function withM3Sample(id: string): FlowGraph {
+  return { ...SAMPLE_M3_GRAPH, id };
+}
+
 export function App() {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowName, setFlowName] = useState("未命名流程");
@@ -38,6 +43,9 @@ export function App() {
   const [draftHash, setDraftHash] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("就绪");
   const [busy, setBusy] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [breakpointNodeIds, setBreakpointNodeIds] = useState<string[]>([]);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
   const applyLoaded = useCallback(
     (detail: {
@@ -124,6 +132,42 @@ export function App() {
         : "已载入 M2 可执行样例（请先新建流程再保存发布）",
     );
   };
+
+  const onLoadM3Sample = () => {
+    const id = flowId ?? "local";
+    setGraph(withM3Sample(id));
+    setGraphEpoch((n) => n + 1);
+    setStatus(
+      flowId
+        ? "已载入 M3 断点/审批样例（请保存并发布后试运行）"
+        : "已载入 M3 断点/审批样例（请先新建流程再保存发布）",
+    );
+  };
+
+  const onToggleBreakpoint = useCallback(
+    async (nodeId: string) => {
+      if (!activeRunId) {
+        setStatus("请先试运行后再右键切换断点");
+        return;
+      }
+      try {
+        const set = new Set(breakpointNodeIds);
+        if (set.has(nodeId)) set.delete(nodeId);
+        else set.add(nodeId);
+        const next = [...set].sort();
+        const res = await api.putBreakpoints(activeRunId, next);
+        setBreakpointNodeIds(res.node_ids);
+        setStatus(
+          res.node_ids.includes(nodeId)
+            ? `已为 ${nodeId} 设置断点`
+            : `已清除 ${nodeId} 断点`,
+        );
+      } catch (e) {
+        setStatus(`断点切换失败: ${(e as Error).message}`);
+      }
+    },
+    [activeRunId, breakpointNodeIds],
+  );
 
   const onSave = async () => {
     if (!flowId) {
@@ -219,6 +263,9 @@ export function App() {
           <button type="button" disabled={busy} onClick={onLoadM2Sample}>
             载入 M2 样例
           </button>
+          <button type="button" disabled={busy} onClick={onLoadM3Sample}>
+            载入 M3 样例
+          </button>
           <button type="button" disabled={busy || !flowId} onClick={() => void onReload()}>
             重新加载
           </button>
@@ -243,6 +290,9 @@ export function App() {
             graph={graph}
             graphEpoch={graphEpoch}
             onGraphChange={setGraph}
+            breakpointNodeIds={breakpointNodeIds}
+            onSelectedNodeChange={setSelectedNodeId}
+            onToggleBreakpoint={(id) => void onToggleBreakpoint(id)}
           />
         </div>
         <TestRunPanel
@@ -251,6 +301,9 @@ export function App() {
           graph={graph}
           busy={busy}
           onStatus={setStatus}
+          selectedNodeId={selectedNodeId}
+          onBreakpointsChange={setBreakpointNodeIds}
+          onRunIdChange={setActiveRunId}
         />
       </div>
     </div>

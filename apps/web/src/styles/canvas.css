@@ -2,6 +2,7 @@
   --awo-bg: linear-gradient(180deg, #eaf6ff, #f7fbff);
   --awo-node-blue: #3b82f6;
   --awo-node-green: #22c55e;
+  --awo-node-purple: #9333ea;
   --awo-node-orange: #f97316;
   --awo-edge-success: #3b82f6;
   --awo-edge-failure: #ef4444;
@@ -247,4 +248,19 @@ body,
   padding: 4px 8px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
+}
+
+
+.awo-node--purple {
+  border-color: var(--awo-node-purple, #9333ea);
+}
+
+.awo-node--purple .awo-node__icon {
+  color: var(--awo-node-purple, #9333ea);
+}
+
+.awo-node--breakpoint {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.55), 0 2px 8px rgba(30, 64, 175, 0.12);
+  outline: 2px dashed #ef4444;
+  outline-offset: 2px;
 }

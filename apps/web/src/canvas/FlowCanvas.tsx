@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ReactFlow,
   Background,
@@ -38,6 +38,12 @@ type Props = {
   /** Bump when graph is loaded/replaced from API so XYFlow state resets. */
   graphEpoch?: number;
   onGraphChange?: (graph: FlowGraph) => void;
+  /** Active dynamic breakpoint node ids for highlight */
+  breakpointNodeIds?: string[];
+  /** Selected canvas node id (for breakpoint toggle in run panel) */
+  onSelectedNodeChange?: (nodeId: string | null) => void;
+  /** Right-click a node to toggle breakpoint when a run is active */
+  onToggleBreakpoint?: (nodeId: string) => void;
 };
 
 function defaultLabelForKind(kind: EdgeKind): string {
@@ -46,7 +52,14 @@ function defaultLabelForKind(kind: EdgeKind): string {
   return "";
 }
 
-export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
+export function FlowCanvas({
+  graph,
+  graphEpoch = 0,
+  onGraphChange,
+  breakpointNodeIds = [],
+  onSelectedNodeChange,
+  onToggleBreakpoint,
+}: Props) {
   const initial = toXyflow(graph);
   const [nodes, setNodes, onNodesChangeInternal] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState(initial.edges);
@@ -64,6 +77,19 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
     setSelectedEdgeId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on epoch/id
   }, [graphEpoch, graph.id, setNodes, setEdges]);
+
+  // Apply breakpoint highlight without resetting positions.
+  useEffect(() => {
+    const set = new Set(breakpointNodeIds);
+    setNodes((nds) =>
+      nds.map((n) => {
+        const data = (n.data ?? {}) as Record<string, unknown>;
+        const nextHas = set.has(n.id);
+        if (Boolean(data.hasBreakpoint) === nextHas) return n;
+        return { ...n, data: { ...data, hasBreakpoint: nextHas } };
+      }),
+    );
+  }, [breakpointNodeIds, graphEpoch, setNodes]);
 
   const emit = useCallback(
     (nextNodes: Node[], nextEdges: Edge[]) => {
@@ -151,9 +177,22 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
     emit(nodesRef.current, edgesRef.current);
   }, [emit]);
 
-  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
-    setSelectedEdgeId(params.edges[0]?.id ?? null);
-  }, []);
+  const onSelectionChange = useCallback(
+    (params: OnSelectionChangeParams) => {
+      setSelectedEdgeId(params.edges[0]?.id ?? null);
+      onSelectedNodeChange?.(params.nodes[0]?.id ?? null);
+    },
+    [onSelectedNodeChange],
+  );
+
+  const onNodeContextMenu = useCallback(
+    (event: ReactMouseEvent, node: Node) => {
+      if (!onToggleBreakpoint) return;
+      event.preventDefault();
+      onToggleBreakpoint(node.id);
+    },
+    [onToggleBreakpoint],
+  );
 
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
   const selectedLabel =
@@ -203,6 +242,7 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onSelectionChange={onSelectionChange}
+        onNodeContextMenu={onNodeContextMenu}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView

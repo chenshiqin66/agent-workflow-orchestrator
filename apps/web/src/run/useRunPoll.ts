@@ -10,6 +10,7 @@ import {
 export const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "queued",
   "running",
+  "paused",
   "cancel_requested",
 ]);
 
