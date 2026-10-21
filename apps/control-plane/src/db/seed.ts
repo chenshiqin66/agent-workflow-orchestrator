@@ -18,6 +18,9 @@ const UI_META: Record<
   End: { color: "green", icon: "chat", shape: "rounded" },
   Transform: { color: "blue", icon: "transform", shape: "rounded" },
   Emit: { color: "blue", icon: "broadcast", shape: "rounded" },
+  HumanApproval: { color: "orange", icon: "check", shape: "rounded" },
+  Input: { color: "teal", icon: "form", shape: "rounded" },
+  Breakpoint: { color: "red", icon: "stop", shape: "diamond" },
 };
 
 const NODE_CATEGORIES: Record<string, string> = {
@@ -28,6 +31,9 @@ const NODE_CATEGORIES: Record<string, string> = {
   LLM: "agent",
   Transform: "data",
   Emit: "debug",
+  HumanApproval: "control",
+  Input: "control",
+  Breakpoint: "debug",
 };
 
 const NODE_TYPES = [
@@ -38,6 +44,9 @@ const NODE_TYPES = [
   "LLM",
   "Transform",
   "Emit",
+  "HumanApproval",
+  "Input",
+  "Breakpoint",
 ] as const;
 
 async function seed() {
@@ -112,7 +121,7 @@ async function seed() {
   }
 
   console.log(
-    "seed complete: u_dev, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM|Transform|Emit",
+    "seed complete: u_dev, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM|Transform|Emit|HumanApproval|Input|Breakpoint",
   );
 }
 

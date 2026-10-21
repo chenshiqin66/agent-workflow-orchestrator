@@ -88,6 +88,10 @@ export const runs = pgTable("runs", {
   costTokens: integer("cost_tokens").default(0),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /** M3: executor checkpoint while paused */
+  checkpointJson: jsonb("checkpoint_json"),
+  /** M3: breakpoint | approval | input */
+  pauseReason: text("pause_reason"),
 });
 
 export const runEvents = pgTable(
@@ -103,3 +107,29 @@ export const runEvents = pgTable(
   },
   (t) => [unique("run_events_run_id_seq_unique").on(t.runId, t.seq)],
 );
+
+/** M3: per-run dynamic breakpoints */
+export const runBreakpoints = pgTable(
+  "run_breakpoints",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    active: integer("active").notNull().default(1), // 1=active, 0=inactive
+  },
+  (t) => [
+    unique("run_breakpoints_run_id_node_id_unique").on(t.runId, t.nodeId),
+  ],
+);
+
+/** M3: user signals (approve/reject/input/resume) against a paused run */
+export const runSignals = pgTable("run_signals", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  /** approval | input | resume — approve/reject stored under approval + payload */
+  kind: text("kind").notNull(),
+  payloadJson: jsonb("payload_json").notNull(),
+  /** pending | consumed | rejected */
+  status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

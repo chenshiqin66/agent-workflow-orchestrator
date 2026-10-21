@@ -18,9 +18,12 @@ describe("seed", () => {
     const keys = defs.map((d) => d.typeKey).sort();
     expect(keys).toEqual([
       "Branch",
+      "Breakpoint",
       "Emit",
       "End",
       "HTTP",
+      "HumanApproval",
+      "Input",
       "LLM",
       "Start",
       "Transform",
@@ -37,5 +40,26 @@ describe("seed", () => {
       "rounded",
     );
     expect((emit?.uiMeta as { color?: string })?.color).toBe("blue");
+  });
+
+  it("seed includes HumanApproval, Input, Breakpoint", async () => {
+    const { db } = await import("../src/db/client");
+    const { nodeDefs } = await import("../src/db/schema");
+    const keys = await db.select({ typeKey: nodeDefs.typeKey }).from(nodeDefs);
+    const set = new Set(keys.map((k) => k.typeKey));
+    expect(set.has("HumanApproval")).toBe(true);
+    expect(set.has("Input")).toBe(true);
+    expect(set.has("Breakpoint")).toBe(true);
+
+    const defs = await db.select().from(nodeDefs);
+    const human = defs.find((d) => d.typeKey === "HumanApproval");
+    const input = defs.find((d) => d.typeKey === "Input");
+    const bp = defs.find((d) => d.typeKey === "Breakpoint");
+    expect(human?.category).toBe("control");
+    expect(input?.category).toBe("control");
+    expect(bp?.category).toBe("debug");
+    expect((human?.uiMeta as { color?: string })?.color).toBe("orange");
+    expect((input?.uiMeta as { color?: string })?.color).toBe("teal");
+    expect((bp?.uiMeta as { color?: string })?.color).toBe("red");
   });
 });
