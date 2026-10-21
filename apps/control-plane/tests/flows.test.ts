@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { and, eq } from "drizzle-orm";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
 
@@ -19,6 +20,25 @@ describe.skipIf(!hasDb)("flows API", () => {
     });
     expect(created.status).toBe(201);
     const { id } = await created.json();
+
+    const got = await app.request(`/flows/${id}`, { headers });
+    expect(got.status).toBe(200);
+    const flowBody = await got.json();
+    expect(flowBody.id).toBe(id);
+    expect(flowBody.name).toBe("客服流水线");
+    expect(flowBody.latestDraftVersionId).toBeTruthy();
+    expect(flowBody.draft?.status).toBe("draft");
+    expect(flowBody.graph).toMatchObject({ nodes: [], edges: [] });
+
+    const nodeDefsRes = await app.request("/node-defs", { headers });
+    expect(nodeDefsRes.status).toBe(200);
+    const defs = await nodeDefsRes.json();
+    expect(Array.isArray(defs)).toBe(true);
+    expect(defs.length).toBeGreaterThanOrEqual(5);
+    const typeKeys = defs.map((d: { typeKey: string }) => d.typeKey);
+    for (const key of ["Start", "End", "Branch", "HTTP", "LLM"]) {
+      expect(typeKeys).toContain(key);
+    }
 
     const graph = {
       id: "tmp",
@@ -49,6 +69,21 @@ describe.skipIf(!hasDb)("flows API", () => {
     expect(pub.status).toBe(200);
     const published = await pub.json();
     expect(published.status).toBe("published");
+
+    const { db } = await import("../src/db/client");
+    const { auditLogs } = await import("../src/db/schema");
+    const audits = await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.resourceId, id), eq(auditLogs.action, "flow.publish")));
+    expect(audits.length).toBeGreaterThanOrEqual(1);
+    expect(audits[0]?.actor).toBe("u_dev");
+    expect(audits[0]?.resourceType).toBe("flow");
+    expect(audits[0]?.diffJson).toMatchObject({
+      publishedVersionId: published.versionId,
+      version: published.version,
+      schemaHash: published.schemaHash,
+    });
 
     // mutate published row must not be possible via draft overwrite of same version id
     const again = await app.request(`/flows/${id}/draft`, {

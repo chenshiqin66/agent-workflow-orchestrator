@@ -9,8 +9,17 @@ import {
   projects,
 } from "../db/schema";
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbOrTx = typeof db | Tx;
+
 function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function httpError(message: string, status: number): Error {
+  const err = new Error(message);
+  (err as Error & { status: number }).status = status;
+  return err;
 }
 
 export async function createFlow(
@@ -23,9 +32,7 @@ export async function createFlow(
     where: and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)),
   });
   if (!project) {
-    const err = new Error("project not found");
-    (err as Error & { status: number }).status = 404;
-    throw err;
+    throw httpError("project not found", 404);
   }
 
   const flowId = newId("flow");
@@ -38,22 +45,24 @@ export async function createFlow(
   };
   const schemaHash = hashGraph(emptyGraph);
 
-  await db.insert(flows).values({
-    id: flowId,
-    projectId,
-    name,
-    latestDraftVersionId: versionId,
-    publishedVersionId: null,
-  });
+  await db.transaction(async (tx) => {
+    await tx.insert(flows).values({
+      id: flowId,
+      projectId,
+      name,
+      latestDraftVersionId: versionId,
+      publishedVersionId: null,
+    });
 
-  await db.insert(flowVersions).values({
-    id: versionId,
-    flowId,
-    version: 1,
-    status: "draft",
-    graphJson: emptyGraph,
-    schemaHash,
-    createdBy: userId,
+    await tx.insert(flowVersions).values({
+      id: versionId,
+      flowId,
+      version: 1,
+      status: "draft",
+      graphJson: emptyGraph,
+      schemaHash,
+      createdBy: userId,
+    });
   });
 
   return { id: flowId, name };
@@ -64,9 +73,7 @@ export async function getFlow(flowId: string, workspaceId: string) {
     where: eq(flows.id, flowId),
   });
   if (!flow) {
-    const err = new Error("flow not found");
-    (err as Error & { status: number }).status = 404;
-    throw err;
+    throw httpError("flow not found", 404);
   }
 
   const project = await db.query.projects.findFirst({
@@ -76,9 +83,7 @@ export async function getFlow(flowId: string, workspaceId: string) {
     ),
   });
   if (!project) {
-    const err = new Error("flow not found");
-    (err as Error & { status: number }).status = 404;
-    throw err;
+    throw httpError("flow not found", 404);
   }
 
   let draftGraph: unknown = null;
@@ -141,21 +146,24 @@ export async function saveDraft(
       id: versionId,
     });
     const schemaHash = hashGraph(parsed);
-    const nextVersion = await nextVersionNumber(flowId);
-    await db.insert(flowVersions).values({
-      id: versionId,
-      flowId,
-      version: nextVersion,
-      status: "draft",
-      graphJson: parsed,
-      schemaHash,
-      createdBy: userId,
+
+    return db.transaction(async (tx) => {
+      const nextVersion = await nextVersionNumber(flowId, tx);
+      await tx.insert(flowVersions).values({
+        id: versionId,
+        flowId,
+        version: nextVersion,
+        status: "draft",
+        graphJson: parsed,
+        schemaHash,
+        createdBy: userId,
+      });
+      await tx
+        .update(flows)
+        .set({ latestDraftVersionId: versionId })
+        .where(eq(flows.id, flowId));
+      return { versionId, schemaHash, version: nextVersion };
     });
-    await db
-      .update(flows)
-      .set({ latestDraftVersionId: versionId })
-      .where(eq(flows.id, flowId));
-    return { versionId, schemaHash, version: nextVersion };
   }
 
   const parsed = parseFlowGraph({
@@ -192,9 +200,7 @@ export async function publishFlow(
   const flow = await getFlowOwned(flowId, workspaceId);
 
   if (!flow.latestDraftVersionId) {
-    const err = new Error("no draft to publish");
-    (err as Error & { status: number }).status = 400;
-    throw err;
+    throw httpError("no draft to publish", 400);
   }
 
   const draft = await db.query.flowVersions.findFirst({
@@ -204,52 +210,53 @@ export async function publishFlow(
     ),
   });
   if (!draft) {
-    const err = new Error("no draft to publish");
-    (err as Error & { status: number }).status = 400;
-    throw err;
+    throw httpError("no draft to publish", 400);
   }
 
   const publishedId = newId("fv");
-  const versionNum = await nextVersionNumber(flowId);
   const graph = draft.graphJson as FlowGraph;
   const graphWithId: FlowGraph = { ...graph, id: publishedId };
   const schemaHash = hashGraph(graphWithId);
 
-  await db.insert(flowVersions).values({
-    id: publishedId,
-    flowId,
-    version: versionNum,
-    status: "published",
-    graphJson: graphWithId,
-    schemaHash,
-    createdBy: userId,
-  });
+  return db.transaction(async (tx) => {
+    const versionNum = await nextVersionNumber(flowId, tx);
 
-  await db
-    .update(flows)
-    .set({ publishedVersionId: publishedId })
-    .where(eq(flows.id, flowId));
+    await tx.insert(flowVersions).values({
+      id: publishedId,
+      flowId,
+      version: versionNum,
+      status: "published",
+      graphJson: graphWithId,
+      schemaHash,
+      createdBy: userId,
+    });
 
-  await db.insert(auditLogs).values({
-    id: newId("aud"),
-    actor: userId,
-    action: "flow.publish",
-    resourceType: "flow",
-    resourceId: flowId,
-    diffJson: {
-      publishedVersionId: publishedId,
-      fromDraftVersionId: draft.id,
+    await tx
+      .update(flows)
+      .set({ publishedVersionId: publishedId })
+      .where(eq(flows.id, flowId));
+
+    await tx.insert(auditLogs).values({
+      id: newId("aud"),
+      actor: userId,
+      action: "flow.publish",
+      resourceType: "flow",
+      resourceId: flowId,
+      diffJson: {
+        publishedVersionId: publishedId,
+        fromDraftVersionId: draft.id,
+        version: versionNum,
+        schemaHash,
+      },
+    });
+
+    return {
+      versionId: publishedId,
+      status: "published" as const,
       version: versionNum,
       schemaHash,
-    },
+    };
   });
-
-  return {
-    versionId: publishedId,
-    status: "published",
-    version: versionNum,
-    schemaHash,
-  };
 }
 
 export async function listNodeDefs(workspaceId: string) {
@@ -264,9 +271,7 @@ async function getFlowOwned(flowId: string, workspaceId: string) {
     where: eq(flows.id, flowId),
   });
   if (!flow) {
-    const err = new Error("flow not found");
-    (err as Error & { status: number }).status = 404;
-    throw err;
+    throw httpError("flow not found", 404);
   }
   const project = await db.query.projects.findFirst({
     where: and(
@@ -275,20 +280,16 @@ async function getFlowOwned(flowId: string, workspaceId: string) {
     ),
   });
   if (!project) {
-    const err = new Error("flow not found");
-    (err as Error & { status: number }).status = 404;
-    throw err;
+    throw httpError("flow not found", 404);
   }
   return flow;
 }
 
-async function nextVersionNumber(flowId: string): Promise<number> {
-  const rows = await db
+async function nextVersionNumber(flowId: string, client: DbOrTx = db): Promise<number> {
+  const rows = await client
     .select({ v: max(flowVersions.version) })
     .from(flowVersions)
     .where(eq(flowVersions.flowId, flowId));
   const current = rows[0]?.v ?? 0;
   return current + 1;
 }
-
-// silence unused import if tree-shaken oddly
