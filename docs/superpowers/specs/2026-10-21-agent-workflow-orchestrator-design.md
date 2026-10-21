@@ -1,7 +1,7 @@
 # Design Spec: 智能体可视化编排系统（拖拽流程）
 
 - Date: 2026-10-21
-- Status: approved; M1 plan in `docs/superpowers/plans/2026-10-21-m1-graph-canvas-control-plane.md`
+- Status: approved; M1 plan in `docs/superpowers/plans/2026-10-21-m1-graph-canvas-control-plane.md`; M2 plan in `docs/superpowers/plans/2026-10-21-m2-python-executor-test-run-timeline.md`
 - Product positioning: 编排画布 + 运行时调试/回放（混合）
 - Architecture: 方案 A — TypeScript 控制面 + 语言无关 Graph JSON + 可插拔 HTTP/gRPC 执行器
 
@@ -261,7 +261,7 @@ Runtime optional: `executor_jobs` for local queue; not required if gateway is pu
 
 - DB: PostgreSQL confirmed?
 - Auth: 自建 session vs OIDC?
-- First executor transport: HTTP webhook vs gRPC stream?
+- First executor transport: **HTTP push job + HTTP callback** (resolved in M2 plan; gRPC deferred)
 - Monorepo vs multi-repo?
 
 ## 13. Approval
