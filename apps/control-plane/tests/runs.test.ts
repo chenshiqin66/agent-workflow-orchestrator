@@ -162,3 +162,238 @@ describe("runs API", () => {
     expect((await got.json()).status).toBe("cancel_requested");
   });
 });
+
+describe("M3 pause / signal / state / breakpoints", () => {
+  let app: { request: typeof import("../src/index").app.request };
+
+  beforeAll(async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      ),
+    );
+    const mod = await import("../src/index");
+    app = mod.app;
+  });
+
+  const executorHeaders = {
+    "X-Executor-Token": process.env.EXECUTOR_TOKEN!,
+    "Content-Type": "application/json",
+  };
+
+  async function createFlow(name: string): Promise<string> {
+    const created = await app.request("/projects/p_demo/flows", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name }),
+    });
+    expect(created.status).toBe(201);
+    const { id } = await created.json();
+    return id as string;
+  }
+
+  async function saveAndPublish(flowId: string): Promise<void> {
+    const saved = await app.request(`/flows/${flowId}/draft`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ graph: minimalGraph }),
+    });
+    expect(saved.status).toBe(200);
+    const pub = await app.request(`/flows/${flowId}/publish`, {
+      method: "POST",
+      headers,
+    });
+    expect(pub.status).toBe(200);
+  }
+
+  async function createPausedBreakpointRun(): Promise<string> {
+    const flowId = await createFlow(`m3-pause-${Date.now()}-${Math.random()}`);
+    await saveAndPublish(flowId);
+    const created = await app.request(`/flows/${flowId}/test-runs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: { flag: true } }),
+    });
+    expect(created.status).toBe(201);
+    const { id: runId } = await created.json();
+
+    const pause = await app.request(`/internal/runs/${runId}/events`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({
+        event_type: "breakpoint_hit",
+        node_id: "n_transform",
+        payload: {
+          checkpoint: {
+            node_id: "n_transform",
+            state: { flag: true },
+            pause_kind: "breakpoint",
+          },
+        },
+      }),
+    });
+    expect(pause.status).toBe(201);
+    return runId as string;
+  }
+
+  async function createPausedApprovalRun(): Promise<string> {
+    const flowId = await createFlow(`m3-appr-${Date.now()}-${Math.random()}`);
+    await saveAndPublish(flowId);
+    const created = await app.request(`/flows/${flowId}/test-runs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: {} }),
+    });
+    expect(created.status).toBe(201);
+    const { id: runId } = await created.json();
+
+    const pause = await app.request(`/internal/runs/${runId}/events`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({
+        event_type: "waiting_signal",
+        node_id: "n_approve",
+        payload: {
+          checkpoint: {
+            node_id: "n_approve",
+            state: { x: 1 },
+            pause_kind: "approval",
+          },
+        },
+      }),
+    });
+    expect(pause.status).toBe(201);
+    return runId as string;
+  }
+
+  it("pause event sets run to paused and stores checkpoint", async () => {
+    const runId = await createPausedBreakpointRun();
+    const run = await app.request(`/runs/${runId}`, { headers });
+    expect(run.status).toBe(200);
+    const body = await run.json();
+    expect(body.status).toBe("paused");
+    expect(body.pauseReason).toBe("breakpoint");
+    expect(body.checkpoint.node_id).toBe("n_transform");
+    expect(body.checkpoint.state).toEqual({ flag: true });
+  });
+
+  it("resume after breakpoint re-queues and dispatches", async () => {
+    const runId = await createPausedBreakpointRun();
+    const sig = await app.request(`/runs/${runId}/signal`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "resume" }),
+    });
+    expect(sig.status).toBe(200);
+    const body = await sig.json();
+    expect(["queued", "running"]).toContain(body.status);
+
+    const got = await app.request(`/runs/${runId}`, { headers });
+    const meta = await got.json();
+    expect(["queued", "running"]).toContain(meta.status);
+
+    const ev = await app.request(`/runs/${runId}/events?after_seq=0`, {
+      headers,
+    });
+    const types = (await ev.json()).events.map(
+      (e: { eventType: string }) => e.eventType,
+    );
+    expect(types).toContain("signal_received");
+  });
+
+  it("rejects approve when pause_reason is breakpoint", async () => {
+    const runId = await createPausedBreakpointRun();
+    const sig = await app.request(`/runs/${runId}/signal`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "approve" }),
+    });
+    expect(sig.status).toBe(400);
+  });
+
+  it("approve on approval pause sets resume_edge and re-dispatches", async () => {
+    const runId = await createPausedApprovalRun();
+    const sig = await app.request(`/runs/${runId}/signal`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "approve" }),
+    });
+    expect(sig.status).toBe(200);
+    const got = await app.request(`/runs/${runId}`, { headers });
+    const meta = await got.json();
+    expect(["queued", "running"]).toContain(meta.status);
+    expect(meta.checkpoint.resume_edge_kind).toBe("success");
+  });
+
+  it("PATCH state while paused emits state_patched", async () => {
+    const runId = await createPausedBreakpointRun();
+    const res = await app.request(`/runs/${runId}/state`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ patch: { debug: 1 } }),
+    });
+    expect(res.status).toBe(200);
+    const patched = await res.json();
+    expect(patched.checkpoint.state).toEqual({ flag: true, debug: 1 });
+    expect(patched.status).toBe("paused");
+
+    const ev = await app.request(`/runs/${runId}/events?after_seq=0`, {
+      headers,
+    });
+    const types = (await ev.json()).events.map(
+      (e: { eventType: string }) => e.eventType,
+    );
+    expect(types).toContain("state_patched");
+  });
+
+  it("cancel while paused → cancelled", async () => {
+    const runId = await createPausedBreakpointRun();
+    const res = await app.request(`/runs/${runId}/cancel`, {
+      method: "POST",
+      headers,
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe("cancelled");
+
+    const got = await app.request(`/runs/${runId}`, { headers });
+    const meta = await got.json();
+    expect(meta.status).toBe("cancelled");
+    expect(meta.finishedAt).toBeTruthy();
+    expect(meta.pauseReason).toBeNull();
+  });
+
+  it("PUT/GET breakpoints upserts active set", async () => {
+    const flowId = await createFlow(`m3-bp-${Date.now()}`);
+    await saveAndPublish(flowId);
+    const created = await app.request(`/flows/${flowId}/test-runs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: {} }),
+    });
+    const { id: runId } = await created.json();
+
+    const put = await app.request(`/runs/${runId}/breakpoints`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ node_ids: ["n_a", "n_b"] }),
+    });
+    expect(put.status).toBe(200);
+    expect((await put.json()).node_ids.sort()).toEqual(["n_a", "n_b"]);
+
+    const get1 = await app.request(`/runs/${runId}/breakpoints`, { headers });
+    expect(get1.status).toBe(200);
+    expect((await get1.json()).node_ids.sort()).toEqual(["n_a", "n_b"]);
+
+    const put2 = await app.request(`/runs/${runId}/breakpoints`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ node_ids: ["n_b", "n_c"] }),
+    });
+    expect(put2.status).toBe(200);
+    expect((await put2.json()).node_ids.sort()).toEqual(["n_b", "n_c"]);
+
+    const get2 = await app.request(`/runs/${runId}/breakpoints`, { headers });
+    expect((await get2.json()).node_ids.sort()).toEqual(["n_b", "n_c"]);
+  });
+});

@@ -1,7 +1,8 @@
 import type { JobPayload } from "@awo/run-protocol";
-import { eq, sql } from "drizzle-orm";
+import { CheckpointSchema } from "@awo/run-protocol";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { flowVersions, runEvents, runs } from "../db/schema";
+import { flowVersions, runBreakpoints, runEvents, runs } from "../db/schema";
 
 function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -55,6 +56,24 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
     throw new Error(`flow_version not found for run ${runId}`);
   }
 
+  const bpRows = await db
+    .select()
+    .from(runBreakpoints)
+    .where(
+      and(eq(runBreakpoints.runId, runId), eq(runBreakpoints.active, 1)),
+    );
+  const breakpoints = bpRows.map((r) => r.nodeId);
+
+  let checkpoint: JobPayload["checkpoint"] | undefined;
+  // Resume path: queued run with a stored checkpoint (first create has null).
+  if (run.status === "queued" && run.checkpointJson != null) {
+    try {
+      checkpoint = CheckpointSchema.parse(run.checkpointJson);
+    } catch {
+      checkpoint = undefined;
+    }
+  }
+
   try {
     const token = executorToken();
     const payload: JobPayload = {
@@ -64,6 +83,8 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
       input: (run.inputJson ?? {}) as Record<string, unknown>,
       callback_base_url: callbackBaseUrl(),
       token,
+      ...(checkpoint ? { checkpoint } : {}),
+      ...(breakpoints.length > 0 ? { breakpoints } : {}),
     };
 
     const url = `${executorUrl()}/v1/jobs`;

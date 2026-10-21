@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { eq, sql } from "drizzle-orm";
-import { parseCallbackEvent, RunStatusSchema } from "@awo/run-protocol";
+import {
+  CheckpointSchema,
+  parseCallbackEvent,
+  RunStatusSchema,
+} from "@awo/run-protocol";
 import { executorAuthMiddleware } from "../middleware/executor-auth";
 import { db } from "../db/client";
 import { runEvents, runs } from "../db/schema";
@@ -10,6 +14,7 @@ function newId(prefix: string): string {
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
+const PAUSE_EVENTS = new Set(["breakpoint_hit", "waiting_signal"]);
 
 const internalRunsRoutes = new Hono();
 
@@ -41,6 +46,24 @@ internalRunsRoutes.post("/internal/runs/:runId/events", async (c) => {
     return c.json({ error: "run not found" }, 404);
   }
 
+  let pauseCheckpoint: ReturnType<typeof CheckpointSchema.parse> | null = null;
+  if (PAUSE_EVENTS.has(parsed.event_type)) {
+    const rawCp = parsed.payload?.checkpoint;
+    try {
+      pauseCheckpoint = CheckpointSchema.parse(rawCp);
+    } catch (e) {
+      return c.json(
+        {
+          error:
+            e instanceof Error
+              ? `pause event requires valid payload.checkpoint: ${e.message}`
+              : "pause event requires valid payload.checkpoint",
+        },
+        400,
+      );
+    }
+  }
+
   const inserted = await db.transaction(async (tx) => {
     const maxRow = await tx
       .select({ max: sql<number | null>`max(${runEvents.seq})` })
@@ -59,6 +82,18 @@ internalRunsRoutes.post("/internal/runs/:runId/events", async (c) => {
       payloadJson: parsed.payload,
       ts,
     });
+
+    if (pauseCheckpoint) {
+      await tx
+        .update(runs)
+        .set({
+          status: "paused",
+          checkpointJson: pauseCheckpoint,
+          pauseReason: pauseCheckpoint.pause_kind,
+          finishedAt: null,
+        })
+        .where(eq(runs.id, runId));
+    }
 
     return {
       id,
@@ -119,7 +154,8 @@ internalRunsRoutes.post("/internal/runs/:runId/status", async (c) => {
     outputJson?: unknown;
     errorMessage?: string | null;
     startedAt?: Date;
-    finishedAt?: Date;
+    finishedAt?: Date | null;
+    pauseReason?: string | null;
   } = { status };
 
   if (status === "running" && !run.startedAt) {
@@ -130,6 +166,10 @@ internalRunsRoutes.post("/internal/runs/:runId/status", async (c) => {
     if (!run.startedAt) {
       patch.startedAt = now;
     }
+  }
+  // paused is non-terminal; prefer event-driven pause, but accept status posts
+  if (status === "paused") {
+    patch.finishedAt = null;
   }
   if (raw.output !== undefined) {
     patch.outputJson = raw.output;

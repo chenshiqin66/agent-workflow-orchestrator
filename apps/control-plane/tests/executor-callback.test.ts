@@ -307,4 +307,71 @@ describe("executor callbacks + dispatch", () => {
       }
     }
   });
+
+  it("pause on breakpoint_hit stores checkpoint; resume job includes checkpoint+breakpoints", async () => {
+    const { runId } = await createPublishedRun();
+
+    const putBp = await app.request(`/runs/${runId}/breakpoints`, {
+      method: "PUT",
+      headers: userHeaders,
+      body: JSON.stringify({ node_ids: ["n_transform", "n_other"] }),
+    });
+    expect(putBp.status).toBe(200);
+
+    const pause = await app.request(`/internal/runs/${runId}/events`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({
+        event_type: "breakpoint_hit",
+        node_id: "n_transform",
+        payload: {
+          checkpoint: {
+            node_id: "n_transform",
+            state: { flag: true },
+            pause_kind: "breakpoint",
+          },
+        },
+      }),
+    });
+    expect(pause.status).toBe(201);
+
+    const got = await app.request(`/runs/${runId}`, { headers: userHeaders });
+    const meta = await got.json();
+    expect(meta.status).toBe("paused");
+    expect(meta.pauseReason).toBe("breakpoint");
+    expect(meta.checkpoint.node_id).toBe("n_transform");
+
+    fetchMock.mockClear();
+    const sig = await app.request(`/runs/${runId}/signal`, {
+      method: "POST",
+      headers: userHeaders,
+      body: JSON.stringify({ kind: "resume" }),
+    });
+    expect(sig.status).toBe(200);
+
+    expect(fetchMock).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.run_id).toBe(runId);
+    expect(body.checkpoint).toMatchObject({
+      node_id: "n_transform",
+      pause_kind: "breakpoint",
+      state: { flag: true },
+    });
+    expect(body.breakpoints.sort()).toEqual(["n_other", "n_transform"]);
+  });
+
+  it("waiting_signal without checkpoint is rejected", async () => {
+    const { runId } = await createPublishedRun();
+    const bad = await app.request(`/internal/runs/${runId}/events`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({
+        event_type: "waiting_signal",
+        node_id: "n_approve",
+        payload: {},
+      }),
+    });
+    expect(bad.status).toBe(400);
+  });
 });

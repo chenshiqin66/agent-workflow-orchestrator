@@ -1,13 +1,19 @@
-import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
-import type { RunStatus } from "@awo/run-protocol";
-import { RunStatusSchema } from "@awo/run-protocol";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import type { Checkpoint, RunStatus, SignalKind } from "@awo/run-protocol";
+import {
+  CheckpointSchema,
+  RunStatusSchema,
+  SignalKindSchema,
+} from "@awo/run-protocol";
 import { db } from "../db/client";
 import {
   auditLogs,
   flowVersions,
   flows,
   projects,
+  runBreakpoints,
   runEvents,
+  runSignals,
   runs,
 } from "../db/schema";
 import { pushJobToExecutor } from "./executor-client";
@@ -66,6 +72,35 @@ async function assertRunInWorkspace(runId: string, workspaceId: string) {
   }
   await getFlowOwned(version.flowId, workspaceId);
   return { run, version };
+}
+
+async function appendEvent(
+  tx: Tx,
+  runId: string,
+  eventType: string,
+  payload: Record<string, unknown>,
+  nodeId: string | null = null,
+) {
+  const maxRow = await tx
+    .select({ max: sql<number | null>`max(${runEvents.seq})` })
+    .from(runEvents)
+    .where(eq(runEvents.runId, runId));
+  const nextSeq = (maxRow[0]?.max ?? 0) + 1;
+  const id = newId("re");
+  await tx.insert(runEvents).values({
+    id,
+    runId,
+    seq: nextSeq,
+    nodeId,
+    eventType,
+    payloadJson: payload,
+  });
+  return { id, seq: nextSeq };
+}
+
+function parseCheckpoint(raw: unknown): Checkpoint | null {
+  if (raw == null) return null;
+  return CheckpointSchema.parse(raw);
 }
 
 export async function createTestRun(
@@ -143,6 +178,8 @@ export async function getRun(runId: string, workspaceId: string) {
     costTokens: run.costTokens,
     createdBy: run.createdBy,
     createdAt: run.createdAt.toISOString(),
+    pauseReason: run.pauseReason ?? null,
+    checkpoint: parseCheckpoint(run.checkpointJson),
   };
 }
 
@@ -210,6 +247,18 @@ export async function cancelRun(runId: string, workspaceId: string) {
   const { run } = await assertRunInWorkspace(runId, workspaceId);
   const status = RunStatusSchema.parse(run.status);
 
+  if (status === "paused") {
+    await db
+      .update(runs)
+      .set({
+        status: "cancelled",
+        finishedAt: new Date(),
+        pauseReason: null,
+      })
+      .where(eq(runs.id, runId));
+    return { id: runId, status: "cancelled" as const };
+  }
+
   if (status !== "queued" && status !== "running") {
     throw httpError(`cannot cancel run in status ${status}`, 400);
   }
@@ -220,4 +269,211 @@ export async function cancelRun(runId: string, workspaceId: string) {
     .where(eq(runs.id, runId));
 
   return { id: runId, status: "cancel_requested" as const };
+}
+
+function mapSignalDbKind(kind: SignalKind): string {
+  if (kind === "approve" || kind === "reject") return "approval";
+  return kind;
+}
+
+export async function signalRun(
+  runId: string,
+  workspaceId: string,
+  body: { kind?: unknown; payload?: unknown },
+) {
+  const kindParsed = SignalKindSchema.safeParse(body.kind);
+  if (!kindParsed.success) {
+    throw httpError("invalid kind", 400);
+  }
+  const kind = kindParsed.data;
+  const payload =
+    body.payload !== undefined &&
+    body.payload !== null &&
+    typeof body.payload === "object" &&
+    !Array.isArray(body.payload)
+      ? (body.payload as Record<string, unknown>)
+      : undefined;
+
+  const { run } = await assertRunInWorkspace(runId, workspaceId);
+  const status = RunStatusSchema.parse(run.status);
+  if (status !== "paused") {
+    throw httpError(`cannot signal run in status ${status}`, 400);
+  }
+
+  let cp: Checkpoint;
+  try {
+    cp = CheckpointSchema.parse(run.checkpointJson);
+  } catch {
+    throw httpError("paused run missing valid checkpoint", 400);
+  }
+  const reason = run.pauseReason;
+
+  if (kind === "resume") {
+    if (reason !== "breakpoint") {
+      throw httpError("resume only valid for breakpoint pause", 400);
+    }
+  } else if (kind === "approve" || kind === "reject") {
+    if (reason !== "approval") {
+      throw httpError(`${kind} only valid for approval pause`, 400);
+    }
+    cp = {
+      ...cp,
+      resume_edge_kind: kind === "approve" ? "success" : "failure",
+    };
+  } else if (kind === "input") {
+    if (reason !== "input") {
+      throw httpError("input only valid for input pause", 400);
+    }
+    const values = payload ?? {};
+    cp = {
+      ...cp,
+      state: { ...cp.state, ...values },
+      pending_input: values,
+    };
+  }
+
+  await db.transaction(async (tx: Tx) => {
+    await tx.insert(runSignals).values({
+      id: newId("sig"),
+      runId,
+      kind: mapSignalDbKind(kind),
+      payloadJson: {
+        kind,
+        ...(payload !== undefined ? { payload } : {}),
+      },
+      status: "consumed",
+    });
+
+    await appendEvent(tx, runId, "signal_received", {
+      kind,
+      ...(payload !== undefined ? { payload } : {}),
+    }, cp.node_id);
+
+    await tx
+      .update(runs)
+      .set({
+        checkpointJson: cp,
+        status: "queued",
+        pauseReason: null,
+        finishedAt: null,
+      })
+      .where(eq(runs.id, runId));
+  });
+
+  await dispatchJob(runId);
+
+  const after = await db.query.runs.findFirst({ where: eq(runs.id, runId) });
+  return {
+    id: runId,
+    status: RunStatusSchema.parse(after?.status ?? "queued"),
+    checkpoint: parseCheckpoint(after?.checkpointJson),
+  };
+}
+
+export async function patchRunState(
+  runId: string,
+  workspaceId: string,
+  body: { state?: unknown; patch?: unknown },
+) {
+  const { run } = await assertRunInWorkspace(runId, workspaceId);
+  const status = RunStatusSchema.parse(run.status);
+  if (status !== "paused") {
+    throw httpError(`cannot patch state in status ${status}`, 400);
+  }
+
+  let cp: Checkpoint;
+  try {
+    cp = CheckpointSchema.parse(run.checkpointJson);
+  } catch {
+    throw httpError("paused run missing valid checkpoint", 400);
+  }
+
+  let state: Record<string, unknown>;
+  if (
+    body.state !== undefined &&
+    body.state !== null &&
+    typeof body.state === "object" &&
+    !Array.isArray(body.state)
+  ) {
+    state = body.state as Record<string, unknown>;
+  } else if (
+    body.patch !== undefined &&
+    body.patch !== null &&
+    typeof body.patch === "object" &&
+    !Array.isArray(body.patch)
+  ) {
+    state = { ...cp.state, ...(body.patch as Record<string, unknown>) };
+  } else {
+    throw httpError("state or patch object is required", 400);
+  }
+
+  cp = { ...cp, state };
+
+  await db.transaction(async (tx: Tx) => {
+    await tx
+      .update(runs)
+      .set({ checkpointJson: cp })
+      .where(eq(runs.id, runId));
+    await appendEvent(tx, runId, "state_patched", { state }, cp.node_id);
+  });
+
+  return {
+    id: runId,
+    status: "paused" as const,
+    pauseReason: run.pauseReason ?? null,
+    checkpoint: cp,
+  };
+}
+
+export async function putBreakpoints(
+  runId: string,
+  workspaceId: string,
+  nodeIds: unknown,
+) {
+  if (!Array.isArray(nodeIds) || !nodeIds.every((n) => typeof n === "string")) {
+    throw httpError("node_ids must be an array of strings", 400);
+  }
+  const ids = [...new Set(nodeIds as string[])];
+  await assertRunInWorkspace(runId, workspaceId);
+
+  await db.transaction(async (tx: Tx) => {
+    const existing = await tx
+      .select()
+      .from(runBreakpoints)
+      .where(eq(runBreakpoints.runId, runId));
+    const want = new Set(ids);
+
+    for (const row of existing) {
+      const active = want.has(row.nodeId) ? 1 : 0;
+      if (row.active !== active) {
+        await tx
+          .update(runBreakpoints)
+          .set({ active })
+          .where(eq(runBreakpoints.id, row.id));
+      }
+      want.delete(row.nodeId);
+    }
+
+    for (const nodeId of want) {
+      await tx.insert(runBreakpoints).values({
+        id: newId("rbp"),
+        runId,
+        nodeId,
+        active: 1,
+      });
+    }
+  });
+
+  return getBreakpoints(runId, workspaceId);
+}
+
+export async function getBreakpoints(runId: string, workspaceId: string) {
+  await assertRunInWorkspace(runId, workspaceId);
+  const rows = await db
+    .select()
+    .from(runBreakpoints)
+    .where(
+      and(eq(runBreakpoints.runId, runId), eq(runBreakpoints.active, 1)),
+    );
+  return { node_ids: rows.map((r) => r.nodeId).sort() };
 }
