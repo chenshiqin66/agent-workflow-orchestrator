@@ -4,6 +4,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -38,16 +39,20 @@ export const flows = pgTable("flows", {
   publishedVersionId: text("published_version_id"),
 });
 
-export const flowVersions = pgTable("flow_versions", {
-  id: text("id").primaryKey(),
-  flowId: text("flow_id").notNull(),
-  version: integer("version").notNull(),
-  status: text("status").notNull(), // draft | published | archived
-  graphJson: jsonb("graph_json").notNull(),
-  schemaHash: text("schema_hash").notNull(),
-  createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const flowVersions = pgTable(
+  "flow_versions",
+  {
+    id: text("id").primaryKey(),
+    flowId: text("flow_id").notNull(),
+    version: integer("version").notNull(),
+    status: text("status").notNull(), // draft | published | archived
+    graphJson: jsonb("graph_json").notNull(),
+    schemaHash: text("schema_hash").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("flow_versions_flow_id_version_unique").on(t.flowId, t.version)],
+);
 
 export const nodeDefs = pgTable("node_defs", {
   id: text("id").primaryKey(),

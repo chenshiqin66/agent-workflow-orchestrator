@@ -57,4 +57,15 @@ describe("hashGraph", () => {
     const b = structuredClone(a);
     expect(hashGraph(a)).toBe(hashGraph(b));
   });
+
+  it("ignores graph.id so draft/publish of same topology share a hash", () => {
+    const base = {
+      state_schema: { type: "object", properties: {} },
+      nodes: [{ id: "s", type: "Start", config: {}, ui: { x: 1, y: 2 } }],
+      edges: [] as [],
+    };
+    const draft = parseFlowGraph({ ...base, id: "fv_draft" });
+    const published = parseFlowGraph({ ...base, id: "fv_published" });
+    expect(hashGraph(draft)).toBe(hashGraph(published));
+  });
 });

@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { and, eq } from "drizzle-orm";
+import { hashGraph, parseFlowGraph } from "@awo/graph-schema";
 
-const hasDb = Boolean(process.env.DATABASE_URL);
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL is required for @awo/control-plane tests (e.g. postgres://awo:awo@localhost:5432/awo). Local-dev without DB: skip running this package's tests.",
+  );
+}
 
-describe.skipIf(!hasDb)("flows API", () => {
+describe("flows API", () => {
   let app: { request: typeof import("../src/index").app.request };
 
   beforeAll(async () => {
@@ -69,9 +74,12 @@ describe.skipIf(!hasDb)("flows API", () => {
     expect(pub.status).toBe(200);
     const published = await pub.json();
     expect(published.status).toBe("published");
+    // Content hash excludes version id — publish matches draft for same topology.
+    expect(published.schemaHash).toBe(draft.schemaHash);
+    expect(published.schemaHash).toBe(hashGraph(parseFlowGraph(graph)));
 
     const { db } = await import("../src/db/client");
-    const { auditLogs } = await import("../src/db/schema");
+    const { auditLogs, flowVersions } = await import("../src/db/schema");
     const audits = await db
       .select()
       .from(auditLogs)
@@ -84,6 +92,14 @@ describe.skipIf(!hasDb)("flows API", () => {
       version: published.version,
       schemaHash: published.schemaHash,
     });
+
+    // Unique (flow_id, version) holds for draft + published rows
+    const versions = await db
+      .select()
+      .from(flowVersions)
+      .where(eq(flowVersions.flowId, id));
+    const nums = versions.map((v) => v.version);
+    expect(new Set(nums).size).toBe(nums.length);
 
     // mutate published row must not be possible via draft overwrite of same version id
     const again = await app.request(`/flows/${id}/draft`, {

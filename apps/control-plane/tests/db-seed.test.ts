@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 
-const hasDb = Boolean(process.env.DATABASE_URL);
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL is required for @awo/control-plane tests (e.g. postgres://awo:awo@localhost:5432/awo). Local-dev without DB: skip running this package's tests.",
+  );
+}
 
-describe.skipIf(!hasDb)("seed", () => {
+describe("seed", () => {
   it("has developer user and core node defs", async () => {
     const { db } = await import("../src/db/client");
     const { nodeDefs, users } = await import("../src/db/schema");

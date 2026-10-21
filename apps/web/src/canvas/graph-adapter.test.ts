@@ -77,4 +77,25 @@ describe("graph-adapter", () => {
     expect(back.edges.find((e) => e.id === "e1")?.sourceHandle).toBe("success");
     expect(back.edges.find((e) => e.id === "e2")?.label).toBe("查询失败");
   });
+
+  it("fails closed when graphType is missing on a non-decision node", () => {
+    const { nodes, edges } = toXyflow(sampleGraph);
+    const broken = nodes.map((n) =>
+      n.id === "s" ? { ...n, data: { label: "Start" } } : n,
+    );
+    expect(() => fromXyflow(broken, edges, sampleGraph.id)).toThrow(
+      /missing data\.graphType/,
+    );
+  });
+
+  it("maps decision XYFlow type to Branch when graphType omitted", () => {
+    const { nodes, edges } = toXyflow(sampleGraph);
+    const withoutType = nodes.map((n) =>
+      n.id === "b"
+        ? { ...n, data: { label: "判断", config: {}, variant: "decision" } }
+        : n,
+    );
+    const back = fromXyflow(withoutType, edges, sampleGraph.id);
+    expect(back.nodes.find((n) => n.id === "b")?.type).toBe("Branch");
+  });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -14,14 +14,15 @@ import {
   type EdgeChange,
   type Node,
   type NodeChange,
+  type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { BaseNode } from "./nodes/BaseNode";
 import { DecisionNode } from "./nodes/DecisionNode";
 import { LabeledEdge } from "./edges/LabeledEdge";
-import { fromXyflow, toXyflow } from "./graph-adapter";
-import type { FlowGraph } from "@awo/graph-schema";
+import { fromXyflow, toXyflow, type AwoEdgeData } from "./graph-adapter";
+import type { EdgeKind, FlowGraph } from "@awo/graph-schema";
 
 const nodeTypes = {
   base: BaseNode,
@@ -39,10 +40,17 @@ type Props = {
   onGraphChange?: (graph: FlowGraph) => void;
 };
 
+function defaultLabelForKind(kind: EdgeKind): string {
+  if (kind === "success") return "查询成功";
+  if (kind === "failure") return "查询失败";
+  return "";
+}
+
 export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
   const initial = toXyflow(graph);
   const [nodes, setNodes, onNodesChangeInternal] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState(initial.edges);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
@@ -53,6 +61,7 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
     const next = toXyflow(graph);
     setNodes(next.nodes);
     setEdges(next.edges);
+    setSelectedEdgeId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on epoch/id
   }, [graphEpoch, graph.id, setNodes, setEdges]);
 
@@ -68,7 +77,7 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
   const onConnect = useCallback(
     (connection: Connection) => {
       setEdges((eds) => {
-        const kind =
+        const kind: EdgeKind =
           connection.sourceHandle === "failure"
             ? "failure"
             : connection.sourceHandle === "success"
@@ -80,11 +89,25 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
             : kind === "success"
               ? "#3b82f6"
               : "#94a3b8";
+        let label = defaultLabelForKind(kind);
+        // Prompt when connecting from Branch success/failure handles so labels are set interactively.
+        if (kind === "success" || kind === "failure") {
+          const entered =
+            typeof window !== "undefined"
+              ? window.prompt(`边标签（${kind}）`, label)
+              : label;
+          if (entered === null) {
+            // Cancel connect
+            return eds;
+          }
+          label = entered.trim();
+        }
         const next = addEdge(
           {
             ...connection,
             type: "labeled",
-            data: { kind, label: "" },
+            data: { kind, label } satisfies AwoEdgeData,
+            label,
             style: { stroke, strokeWidth: 2 },
           },
           eds,
@@ -128,8 +151,50 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
     emit(nodesRef.current, edgesRef.current);
   }, [emit]);
 
+  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    setSelectedEdgeId(params.edges[0]?.id ?? null);
+  }, []);
+
+  const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
+  const selectedLabel =
+    selectedEdge != null
+      ? ((selectedEdge.data as AwoEdgeData | undefined)?.label ??
+        (typeof selectedEdge.label === "string" ? selectedEdge.label : "") ??
+        "")
+      : "";
+
+  const onSelectedLabelChange = (value: string) => {
+    if (!selectedEdgeId) return;
+    setEdges((eds) => {
+      const next = eds.map((e) => {
+        if (e.id !== selectedEdgeId) return e;
+        const prev = (e.data ?? {}) as AwoEdgeData;
+        return {
+          ...e,
+          label: value,
+          data: { ...prev, label: value } satisfies AwoEdgeData,
+        };
+      });
+      emit(nodesRef.current, next);
+      return next;
+    });
+  };
+
   return (
     <div className="awo-canvas-wrap">
+      {selectedEdgeId ? (
+        <div className="awo-edge-editor" role="group" aria-label="边标签编辑">
+          <label>
+            边标签
+            <input
+              type="text"
+              value={selectedLabel}
+              onChange={(ev) => onSelectedLabelChange(ev.target.value)}
+              placeholder="例如：查询成功"
+            />
+          </label>
+        </div>
+      ) : null}
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -137,6 +202,7 @@ export function FlowCanvas({ graph, graphEpoch = 0, onGraphChange }: Props) {
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
+        onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView

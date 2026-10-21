@@ -197,28 +197,38 @@ export async function publishFlow(
   version: number;
   schemaHash: string;
 }> {
-  const flow = await getFlowOwned(flowId, workspaceId);
-
-  if (!flow.latestDraftVersionId) {
-    throw httpError("no draft to publish", 400);
-  }
-
-  const draft = await db.query.flowVersions.findFirst({
-    where: and(
-      eq(flowVersions.id, flow.latestDraftVersionId),
-      eq(flowVersions.status, "draft"),
-    ),
-  });
-  if (!draft) {
-    throw httpError("no draft to publish", 400);
-  }
-
-  const publishedId = newId("fv");
-  const graph = draft.graphJson as FlowGraph;
-  const graphWithId: FlowGraph = { ...graph, id: publishedId };
-  const schemaHash = hashGraph(graphWithId);
+  // Ownership check outside TX; draft graph is re-read under row locks inside.
+  await getFlowOwned(flowId, workspaceId);
 
   return db.transaction(async (tx) => {
+    const [lockedFlow] = await tx
+      .select()
+      .from(flows)
+      .where(eq(flows.id, flowId))
+      .for("update");
+    if (!lockedFlow?.latestDraftVersionId) {
+      throw httpError("no draft to publish", 400);
+    }
+
+    const [draft] = await tx
+      .select()
+      .from(flowVersions)
+      .where(
+        and(
+          eq(flowVersions.id, lockedFlow.latestDraftVersionId),
+          eq(flowVersions.status, "draft"),
+        ),
+      )
+      .for("update");
+    if (!draft) {
+      throw httpError("no draft to publish", 400);
+    }
+
+    const publishedId = newId("fv");
+    const graph = draft.graphJson as FlowGraph;
+    const graphWithId: FlowGraph = { ...graph, id: publishedId };
+    // schemaHash ignores graph.id — same topology as draft yields same hash.
+    const schemaHash = hashGraph(graphWithId);
     const versionNum = await nextVersionNumber(flowId, tx);
 
     await tx.insert(flowVersions).values({

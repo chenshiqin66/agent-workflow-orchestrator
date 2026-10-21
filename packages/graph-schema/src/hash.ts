@@ -14,7 +14,15 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Content hash of graph topology + config.
+ *
+ * Excludes `graph.id` so draft and published rows that share the same
+ * nodes/edges/state_schema produce the same schemaHash (version identity
+ * lives in flow_versions.id / version, not in the hash).
+ */
 export function hashGraph(graph: FlowGraph): string {
-  const canonical = JSON.stringify(sortKeys(graph));
+  const { id: _versionRowId, ...content } = graph;
+  const canonical = JSON.stringify(sortKeys(content));
   return createHash("sha256").update(canonical).digest("hex");
 }

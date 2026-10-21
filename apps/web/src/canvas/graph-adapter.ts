@@ -79,12 +79,19 @@ export function fromXyflow(
 ): FlowGraph {
   const graphNodes: GraphNode[] = nodes.map((n) => {
     const data = (n.data ?? {}) as Partial<AwoNodeData>;
-    const graphType =
+    let graphType: string | undefined =
       typeof data.graphType === "string" && data.graphType.length > 0
         ? data.graphType
-        : n.type === "decision"
-          ? "Branch"
-          : "HTTP";
+        : undefined;
+    // Known XYFlow visual type → Branch; never invent HTTP.
+    if (!graphType && n.type === "decision") {
+      graphType = "Branch";
+    }
+    if (!graphType) {
+      throw new Error(
+        `fromXyflow: node "${n.id}" is missing data.graphType (refusing silent HTTP default)`,
+      );
+    }
     const config: Record<string, unknown> = { ...(data.config ?? {}) };
     if (typeof data.label === "string" && data.label.length > 0 && data.label !== graphType) {
       config.label = data.label;

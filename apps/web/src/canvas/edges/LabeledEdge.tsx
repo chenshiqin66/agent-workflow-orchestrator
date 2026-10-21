@@ -18,6 +18,7 @@ export function LabeledEdge({
   style,
   data,
   markerEnd,
+  selected,
 }: EdgeProps) {
   const d = (data ?? {}) as Partial<AwoEdgeData>;
   const kind = d.kind ?? "default";
@@ -38,17 +39,17 @@ export function LabeledEdge({
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ ...style, stroke, strokeWidth: 2 }}
+        style={{ ...style, stroke, strokeWidth: selected ? 3 : 2 }}
       />
-      {label ? (
+      {(label || selected) ? (
         <EdgeLabelRenderer>
           <div
-            className={`awo-edge-label awo-edge-label--${kind} nodrag nopan`}
+            className={`awo-edge-label awo-edge-label--${kind}${selected ? " awo-edge-label--selected" : ""} nodrag nopan`}
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
             }}
           >
-            {label}
+            {label || (selected ? "（选中后可编辑标签）" : "")}
           </div>
         </EdgeLabelRenderer>
       ) : null}
