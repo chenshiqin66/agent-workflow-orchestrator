@@ -111,4 +111,42 @@ describe("flows API", () => {
     const draft2 = await again.json();
     expect(draft2.versionId).not.toBe(published.versionId);
   });
+
+  it("viewer cannot save draft", async () => {
+    const headers = { "X-User-Id": "u_dev", "Content-Type": "application/json" };
+    const created = await app.request("/projects/p_demo/flows", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: `m4-viewer-draft-${Date.now()}` }),
+    });
+    expect(created.status).toBe(201);
+    const { id: flowId } = await created.json();
+
+    const minimalGraph = {
+      id: "tmp",
+      state_schema: { type: "object", properties: {} },
+      nodes: [
+        { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+        { id: "e", type: "End", config: {}, ui: { x: 200, y: 0 } },
+      ],
+      edges: [
+        {
+          id: "e0",
+          source: "s",
+          sourceHandle: "out",
+          target: "e",
+          targetHandle: "in",
+          kind: "default",
+          label: "",
+        },
+      ],
+    };
+
+    const res = await app.request(`/flows/${flowId}/draft`, {
+      method: "PUT",
+      headers: { "X-User-Id": "u_viewer", "Content-Type": "application/json" },
+      body: JSON.stringify({ graph: minimalGraph }),
+    });
+    expect(res.status).toBe(403);
+  });
 });

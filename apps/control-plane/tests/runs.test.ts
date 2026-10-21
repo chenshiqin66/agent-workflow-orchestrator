@@ -138,6 +138,36 @@ describe("runs API", () => {
     expect(res.status).toBe(400);
   });
 
+  it("developer can create draft test-run; builder cannot", async () => {
+    const flowId = await createFlow(`m4-draft-run-${Date.now()}`);
+    const saved = await app.request(`/flows/${flowId}/draft`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ graph: minimalGraph }),
+    });
+    expect(saved.status).toBe(200);
+
+    const asBuilder = await app.request(`/flows/${flowId}/test-runs`, {
+      method: "POST",
+      headers: { "X-User-Id": "u_builder", "Content-Type": "application/json" },
+      body: JSON.stringify({ input: {}, graph_source: "draft" }),
+    });
+    expect(asBuilder.status).toBe(403);
+
+    const asDev = await app.request(`/flows/${flowId}/test-runs`, {
+      method: "POST",
+      headers: { "X-User-Id": "u_dev", "Content-Type": "application/json" },
+      body: JSON.stringify({ input: {}, graph_source: "draft" }),
+    });
+    expect(asDev.status).toBe(201);
+    const run = await asDev.json();
+    expect(run.id).toMatch(/^run_/);
+    // Draft path uses latest draft version, not published.
+    const flowRes = await app.request(`/flows/${flowId}`, { headers });
+    const flow = await flowRes.json();
+    expect(run.flowVersionId).toBe(flow.latestDraftVersionId);
+  });
+
   it("cancels a queued run", async () => {
     const flowId = await createFlow(`m2-cancel-${Date.now()}`);
     await saveAndPublish(flowId);

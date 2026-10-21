@@ -16,6 +16,7 @@ flowVersionRoutes.put("/flows/:flowId/draft", async (c) => {
       body.graph,
       c.get("userId"),
       c.get("workspaceId"),
+      c.get("role"),
     );
     return c.json(result);
   } catch (e) {
@@ -33,6 +34,7 @@ flowVersionRoutes.post("/flows/:flowId/publish", async (c) => {
       c.req.param("flowId"),
       c.get("userId"),
       c.get("workspaceId"),
+      c.get("role"),
     );
     return c.json(result);
   } catch (e) {

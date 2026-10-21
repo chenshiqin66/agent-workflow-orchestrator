@@ -15,7 +15,7 @@ import {
 const runsRoutes = new Hono<{ Variables: AuthVariables }>();
 
 runsRoutes.post("/flows/:flowId/test-runs", async (c) => {
-  let body: { input?: unknown };
+  let body: { input?: unknown; graph_source?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -29,12 +29,21 @@ runsRoutes.post("/flows/:flowId/test-runs", async (c) => {
   ) {
     return c.json({ error: "input object is required" }, 400);
   }
+  let graphSource: "published" | "draft" = "published";
+  if (body.graph_source !== undefined) {
+    if (body.graph_source !== "published" && body.graph_source !== "draft") {
+      return c.json({ error: "graph_source must be published or draft" }, 400);
+    }
+    graphSource = body.graph_source;
+  }
   try {
     const result = await createTestRun(
       c.req.param("flowId"),
       body.input as Record<string, unknown>,
       c.get("userId"),
       c.get("workspaceId"),
+      c.get("role"),
+      graphSource,
     );
     return c.json(result, 201);
   } catch (e) {
@@ -93,6 +102,7 @@ runsRoutes.post("/runs/:runId/cancel", async (c) => {
     const result = await cancelRun(
       c.req.param("runId"),
       c.get("workspaceId"),
+      c.get("role"),
     );
     return c.json(result);
   } catch (e) {
@@ -113,6 +123,7 @@ runsRoutes.post("/runs/:runId/signal", async (c) => {
       c.req.param("runId"),
       c.get("workspaceId"),
       body,
+      c.get("role"),
     );
     return c.json(result);
   } catch (e) {
@@ -133,6 +144,7 @@ runsRoutes.patch("/runs/:runId/state", async (c) => {
       c.req.param("runId"),
       c.get("workspaceId"),
       body,
+      c.get("role"),
     );
     return c.json(result);
   } catch (e) {
@@ -153,6 +165,7 @@ runsRoutes.put("/runs/:runId/breakpoints", async (c) => {
       c.req.param("runId"),
       c.get("workspaceId"),
       body.node_ids,
+      c.get("role"),
     );
     return c.json(result);
   } catch (e) {

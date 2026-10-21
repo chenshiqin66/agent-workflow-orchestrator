@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { requireRole } from "../auth/roles";
 import type { Checkpoint, RunStatus, SignalKind } from "@awo/run-protocol";
 import {
   CheckpointSchema,
@@ -109,18 +110,38 @@ export async function createTestRun(
   input: Record<string, unknown>,
   userId: string,
   workspaceId: string,
+  role: string,
+  graphSource: "published" | "draft" = "published",
 ): Promise<{ id: string; status: RunStatus; flowVersionId: string }> {
+  requireRole(role, "builder");
   const flow = await getFlowOwned(flowId, workspaceId);
 
-  if (!flow.publishedVersionId) {
-    throw httpError("no published version to test-run", 400);
-  }
+  const source = graphSource ?? "published";
+  let versionId: string;
 
-  const published = await db.query.flowVersions.findFirst({
-    where: eq(flowVersions.id, flow.publishedVersionId),
-  });
-  if (!published || published.status !== "published") {
-    throw httpError("published version missing or not published", 400);
+  if (source === "draft") {
+    requireRole(role, "developer");
+    if (!flow.latestDraftVersionId) {
+      throw httpError("no draft version to test-run", 400);
+    }
+    const draft = await db.query.flowVersions.findFirst({
+      where: eq(flowVersions.id, flow.latestDraftVersionId),
+    });
+    if (!draft || draft.status !== "draft") {
+      throw httpError("draft version missing or not draft", 400);
+    }
+    versionId = draft.id;
+  } else {
+    if (!flow.publishedVersionId) {
+      throw httpError("no published version to test-run", 400);
+    }
+    const published = await db.query.flowVersions.findFirst({
+      where: eq(flowVersions.id, flow.publishedVersionId),
+    });
+    if (!published || published.status !== "published") {
+      throw httpError("published version missing or not published", 400);
+    }
+    versionId = published.id;
   }
 
   const runId = newId("run");
@@ -128,7 +149,7 @@ export async function createTestRun(
   await db.transaction(async (tx: Tx) => {
     await tx.insert(runs).values({
       id: runId,
-      flowVersionId: published.id,
+      flowVersionId: versionId,
       trigger: "test",
       status: "queued",
       inputJson: input,
@@ -143,8 +164,9 @@ export async function createTestRun(
       resourceId: runId,
       diffJson: {
         flowId,
-        flowVersionId: published.id,
+        flowVersionId: versionId,
         trigger: "test",
+        graphSource: source,
       },
     });
   });
@@ -160,7 +182,7 @@ export async function createTestRun(
   return {
     id: runId,
     status,
-    flowVersionId: published.id,
+    flowVersionId: versionId,
   };
 }
 
@@ -244,7 +266,8 @@ export async function listRunEvents(
   };
 }
 
-export async function cancelRun(runId: string, workspaceId: string) {
+export async function cancelRun(runId: string, workspaceId: string, role: string) {
+  requireRole(role, "builder");
   const { run } = await assertRunInWorkspace(runId, workspaceId);
   const status = RunStatusSchema.parse(run.status);
 
@@ -290,7 +313,9 @@ export async function signalRun(
   runId: string,
   workspaceId: string,
   body: { kind?: unknown; payload?: unknown },
+  role: string,
 ) {
+  requireRole(role, "builder");
   const kindParsed = SignalKindSchema.safeParse(body.kind);
   if (!kindParsed.success) {
     throw httpError("invalid kind", 400);
@@ -392,7 +417,9 @@ export async function patchRunState(
   runId: string,
   workspaceId: string,
   body: { state?: unknown; patch?: unknown },
+  role: string,
 ) {
+  requireRole(role, "builder");
   const { run } = await assertRunInWorkspace(runId, workspaceId);
   const status = RunStatusSchema.parse(run.status);
   if (status !== "paused") {
@@ -447,7 +474,9 @@ export async function putBreakpoints(
   runId: string,
   workspaceId: string,
   nodeIds: unknown,
+  role: string,
 ) {
+  requireRole(role, "builder");
   if (!Array.isArray(nodeIds) || !nodeIds.every((n) => typeof n === "string")) {
     throw httpError("node_ids must be an array of strings", 400);
   }

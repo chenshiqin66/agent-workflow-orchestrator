@@ -15,6 +15,7 @@ flowsRoutes.post("/projects/:projectId/flows", async (c) => {
       body.name,
       c.get("userId"),
       c.get("workspaceId"),
+      c.get("role"),
     );
     return c.json(result, 201);
   } catch (e) {

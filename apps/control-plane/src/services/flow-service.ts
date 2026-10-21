@@ -1,5 +1,5 @@
 import { and, eq, max } from "drizzle-orm";
-import { roleAtLeast } from "../auth/roles";
+import { requireRole, roleAtLeast } from "../auth/roles";
 import { parseFlowGraph, hashGraph, type FlowGraph } from "@awo/graph-schema";
 import { db } from "../db/client";
 import {
@@ -28,7 +28,9 @@ export async function createFlow(
   name: string,
   userId: string,
   workspaceId: string,
+  role: string,
 ): Promise<{ id: string; name: string }> {
+  requireRole(role, "builder");
   const project = await db.query.projects.findFirst({
     where: and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)),
   });
@@ -126,7 +128,9 @@ export async function saveDraft(
   graphInput: unknown,
   userId: string,
   workspaceId: string,
+  role: string,
 ): Promise<{ versionId: string; schemaHash: string; version: number }> {
+  requireRole(role, "builder");
   const flow = await getFlowOwned(flowId, workspaceId);
 
   let draftRow =
@@ -192,12 +196,14 @@ export async function publishFlow(
   flowId: string,
   userId: string,
   workspaceId: string,
+  role: string,
 ): Promise<{
   versionId: string;
   status: "published";
   version: number;
   schemaHash: string;
 }> {
+  requireRole(role, "builder");
   // Ownership check outside TX; draft graph is re-read under row locks inside.
   await getFlowOwned(flowId, workspaceId);
 
