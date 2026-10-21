@@ -13,6 +13,9 @@ importers:
       '@awo/graph-schema':
         specifier: workspace:*
         version: link:../../packages/graph-schema
+      '@awo/run-protocol':
+        specifier: workspace:*
+        version: link:../../packages/run-protocol
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.13)

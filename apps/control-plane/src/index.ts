@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { authMiddleware, type AuthVariables } from "./middleware/auth";
 import { flowsRoutes } from "./routes/flows";
 import { flowVersionRoutes } from "./routes/flow-versions";
+import { runsRoutes } from "./routes/runs";
 
 export const PACKAGE = "@awo/control-plane";
 
@@ -30,6 +31,7 @@ app.use("*", async (c, next) => {
 
 app.route("/", flowsRoutes);
 app.route("/", flowVersionRoutes);
+app.route("/", runsRoutes);
 
 export { app };
 
