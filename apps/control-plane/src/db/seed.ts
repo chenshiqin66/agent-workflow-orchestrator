@@ -16,6 +16,8 @@ const UI_META: Record<
   HTTP: { color: "blue", icon: "database", shape: "rounded" },
   LLM: { color: "blue", icon: "bulb", shape: "rounded" },
   End: { color: "green", icon: "chat", shape: "rounded" },
+  Transform: { color: "blue", icon: "transform", shape: "rounded" },
+  Emit: { color: "blue", icon: "broadcast", shape: "rounded" },
 };
 
 const NODE_CATEGORIES: Record<string, string> = {
@@ -24,7 +26,19 @@ const NODE_CATEGORIES: Record<string, string> = {
   Branch: "control",
   HTTP: "integration",
   LLM: "agent",
+  Transform: "data",
+  Emit: "debug",
 };
+
+const NODE_TYPES = [
+  "Start",
+  "End",
+  "Branch",
+  "HTTP",
+  "LLM",
+  "Transform",
+  "Emit",
+] as const;
 
 async function seed() {
   await db
@@ -72,7 +86,7 @@ async function seed() {
       set: { name: "Demo Project", workspaceId: "ws_demo" },
     });
 
-  for (const typeKey of ["Start", "End", "Branch", "HTTP", "LLM"] as const) {
+  for (const typeKey of NODE_TYPES) {
     await db
       .insert(nodeDefs)
       .values({
@@ -97,7 +111,9 @@ async function seed() {
       });
   }
 
-  console.log("seed complete: u_dev, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM");
+  console.log(
+    "seed complete: u_dev, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM|Transform|Emit",
+  );
 }
 
 seed()

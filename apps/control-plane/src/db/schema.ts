@@ -73,3 +73,33 @@ export const auditLogs = pgTable("audit_logs", {
   diffJson: jsonb("diff_json"),
   ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** M2: test/prod/api runs against a flow_version */
+export const runs = pgTable("runs", {
+  id: text("id").primaryKey(),
+  flowVersionId: text("flow_version_id").notNull(),
+  trigger: text("trigger").notNull(), // test | prod | api
+  status: text("status").notNull(),
+  inputJson: jsonb("input_json").notNull(),
+  outputJson: jsonb("output_json"),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  costTokens: integer("cost_tokens").default(0),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const runEvents = pgTable(
+  "run_events",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    seq: integer("seq").notNull(),
+    nodeId: text("node_id"),
+    eventType: text("event_type").notNull(),
+    payloadJson: jsonb("payload_json").notNull(),
+    ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("run_events_run_id_seq_unique").on(t.runId, t.seq)],
+);
