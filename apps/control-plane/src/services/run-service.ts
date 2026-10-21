@@ -100,7 +100,8 @@ async function appendEvent(
 
 function parseCheckpoint(raw: unknown): Checkpoint | null {
   if (raw == null) return null;
-  return CheckpointSchema.parse(raw);
+  const parsed = CheckpointSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function createTestRun(

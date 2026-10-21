@@ -83,7 +83,8 @@ internalRunsRoutes.post("/internal/runs/:runId/events", async (c) => {
       ts,
     });
 
-    if (pauseCheckpoint) {
+    // Do not resurrect a terminal run with a late pause event.
+    if (pauseCheckpoint && !TERMINAL.has(run.status)) {
       await tx
         .update(runs)
         .set({
@@ -161,6 +162,11 @@ internalRunsRoutes.post("/internal/runs/:runId/status", async (c) => {
   if (status === "running" && !run.startedAt) {
     patch.startedAt = now;
   }
+  // Late pause must not overwrite a terminal run.
+  if (status === "paused" && TERMINAL.has(run.status)) {
+    return c.json({ id: runId, status: run.status });
+  }
+
   if (TERMINAL.has(status)) {
     patch.finishedAt = now;
     if (!run.startedAt) {

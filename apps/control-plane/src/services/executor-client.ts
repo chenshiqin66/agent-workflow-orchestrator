@@ -66,11 +66,17 @@ export async function pushJobToExecutor(runId: string): Promise<void> {
 
   let checkpoint: JobPayload["checkpoint"] | undefined;
   // Resume path: queued run with a stored checkpoint (first create has null).
+  // Never cold-start when a checkpoint was expected but is unparseable.
   if (run.status === "queued" && run.checkpointJson != null) {
     try {
       checkpoint = CheckpointSchema.parse(run.checkpointJson);
-    } catch {
-      checkpoint = undefined;
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? `invalid checkpoint on resume: ${err.message}`
+          : "invalid checkpoint on resume";
+      await markDispatchFailed(runId, message);
+      return;
     }
   }
 

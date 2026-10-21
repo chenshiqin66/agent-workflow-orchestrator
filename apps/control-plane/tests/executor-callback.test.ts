@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { eq } from "drizzle-orm";
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -359,6 +360,57 @@ describe("executor callbacks + dispatch", () => {
       state: { flag: true },
     });
     expect(body.breakpoints.sort()).toEqual(["n_other", "n_transform"]);
+  });
+
+
+  it("bad checkpoint on resume fails dispatch; no cold-start job", async () => {
+    const { runId } = await createPublishedRun();
+
+    const pause = await app.request(`/internal/runs/${runId}/events`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({
+        event_type: "breakpoint_hit",
+        node_id: "n_transform",
+        payload: {
+          checkpoint: {
+            node_id: "n_transform",
+            state: { flag: true },
+            pause_kind: "breakpoint",
+          },
+        },
+      }),
+    });
+    expect(pause.status).toBe(201);
+
+    // Corrupt stored checkpoint, then queue for resume without going through
+    // signalRun's parse (which would 400). Exercises pushJobToExecutor defense.
+    const { db } = await import("../src/db/client");
+    const { runs } = await import("../src/db/schema");
+    const { pushJobToExecutor } = await import("../src/services/executor-client");
+    await db
+      .update(runs)
+      .set({
+        status: "queued",
+        pauseReason: null,
+        checkpointJson: { broken: true },
+      })
+      .where(eq(runs.id, runId));
+
+    fetchMock.mockClear();
+    await pushJobToExecutor(runId);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const row = await db.query.runs.findFirst({ where: eq(runs.id, runId) });
+    expect(row?.status).toBe("failed");
+    expect(row?.errorMessage ?? "").toMatch(/invalid checkpoint on resume/i);
+
+    const got = await app.request(`/runs/${runId}`, { headers: userHeaders });
+    expect(got.status).toBe(200);
+    const meta = await got.json();
+    expect(meta.status).toBe("failed");
+    expect(meta.errorMessage).toMatch(/invalid checkpoint on resume/i);
   });
 
   it("waiting_signal without checkpoint is rejected", async () => {

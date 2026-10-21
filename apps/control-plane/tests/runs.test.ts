@@ -363,6 +363,61 @@ describe("M3 pause / signal / state / breakpoints", () => {
     expect(meta.pauseReason).toBeNull();
   });
 
+
+  it("pause event after succeeded leaves status succeeded", async () => {
+    const flowId = await createFlow(`m3-term-${Date.now()}`);
+    await saveAndPublish(flowId);
+    const created = await app.request(`/flows/${flowId}/test-runs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: {} }),
+    });
+    expect(created.status).toBe(201);
+    const { id: runId } = await created.json();
+
+    const done = await app.request(`/internal/runs/${runId}/status`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({ status: "succeeded", output: { ok: true } }),
+    });
+    expect(done.status).toBe(200);
+
+    const late = await app.request(`/internal/runs/${runId}/events`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({
+        event_type: "breakpoint_hit",
+        node_id: "n_late",
+        payload: {
+          checkpoint: {
+            node_id: "n_late",
+            state: {},
+            pause_kind: "breakpoint",
+          },
+        },
+      }),
+    });
+    expect(late.status).toBe(201);
+
+    const got = await app.request(`/runs/${runId}`, { headers });
+    const meta = await got.json();
+    expect(meta.status).toBe("succeeded");
+    expect(meta.finishedAt).toBeTruthy();
+    expect(meta.pauseReason).toBeNull();
+
+    // Status-channel pause also ignored
+    const statusPause = await app.request(`/internal/runs/${runId}/status`, {
+      method: "POST",
+      headers: executorHeaders,
+      body: JSON.stringify({ status: "paused" }),
+    });
+    expect(statusPause.status).toBe(200);
+    expect((await statusPause.json()).status).toBe("succeeded");
+
+    const got2 = await app.request(`/runs/${runId}`, { headers });
+    expect((await got2.json()).status).toBe("succeeded");
+  });
+
   it("PUT/GET breakpoints upserts active set", async () => {
     const flowId = await createFlow(`m3-bp-${Date.now()}`);
     await saveAndPublish(flowId);
