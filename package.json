@@ -8,7 +8,8 @@
     "db:up": "docker compose up -d postgres",
     "dev:executor": "cd apps/executor-py && .venv/bin/uvicorn awo_executor.main:app --app-dir src --host 127.0.0.1 --port 8790 --reload",
     "test:m2": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m2} pnpm --filter @awo/control-plane exec vitest run tests/m2-integration.test.ts",
-    "test:m3": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m3} pnpm --filter @awo/control-plane exec vitest run tests/m3-integration.test.ts"
+    "test:m3": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m3} pnpm --filter @awo/control-plane exec vitest run tests/m3-integration.test.ts",
+    "test:m4": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m4} pnpm --filter @awo/control-plane exec vitest run tests/m4-integration.test.ts"
   },
   "engines": {
     "node": ">=20"
