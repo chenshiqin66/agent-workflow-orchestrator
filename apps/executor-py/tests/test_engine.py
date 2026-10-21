@@ -153,3 +153,73 @@ def test_unsupported_node_fails_run(job_payload: dict):
     assert any(e["event_type"] == "node_failed" for e in cb.events)
     failed = next(e for e in cb.events if e["event_type"] == "node_failed")
     assert failed["payload"].get("error_code") == "unsupported_node_type"
+
+
+def test_branch_success_with_only_default_edge_fails(job_payload: dict):
+    """Branch true + only default outgoing → node_failed (no success↔default alias)."""
+    job = dict(job_payload)
+    graph = dict(job["graph"])
+    edges = []
+    for e in graph["edges"]:
+        if e.get("source") == "n_branch":
+            # drop success/failure; leave a single default (wrong for Branch)
+            continue
+        edges.append(e)
+    edges.append(
+        {
+            "id": "e_branch_default_only",
+            "source": "n_branch",
+            "sourceHandle": "out",
+            "target": "n_emit",
+            "targetHandle": "in",
+            "kind": "default",
+            "label": "",
+        }
+    )
+    graph["edges"] = edges
+    job["graph"] = graph
+
+    cb = RecordingCallback()
+    run_job(job, cb)
+
+    assert cb.statuses[-1]["status"] == "failed"
+    failed = [e for e in cb.events if e["event_type"] == "node_failed"]
+    assert len(failed) == 1
+    assert failed[0]["node_id"] == "n_branch"
+    assert failed[0]["payload"].get("error_code") == "missing_edge"
+    branch_events = [
+        e["event_type"] for e in cb.events if e.get("node_id") == "n_branch"
+    ]
+    assert "node_started" in branch_events
+    assert "node_failed" in branch_events
+    assert "node_finished" not in branch_events
+
+
+def test_branch_comparison_type_error_emits_node_failed(job_payload: dict):
+    """Incompatible compare types → ExpressionError → node_failed + run failed."""
+    job = dict(job_payload)
+    graph = dict(job["graph"])
+    nodes = []
+    for n in graph["nodes"]:
+        if n["id"] == "n_transform":
+            n = dict(n)
+            n["config"] = {"assignments": {"n": "x"}}
+        if n["id"] == "n_branch":
+            n = dict(n)
+            n["config"] = {"expression": "state.n > 1"}
+        nodes.append(n)
+    graph["nodes"] = nodes
+    job["graph"] = graph
+
+    cb = RecordingCallback()
+    run_job(job, cb)
+
+    assert cb.statuses[-1]["status"] == "failed"
+    failed = next(e for e in cb.events if e["event_type"] == "node_failed")
+    assert failed["node_id"] == "n_branch"
+    assert failed["payload"].get("error_code") == "invalid_expression"
+    # Started then failed — no finished for that node
+    branch_events = [e["event_type"] for e in cb.events if e.get("node_id") == "n_branch"]
+    assert "node_started" in branch_events
+    assert "node_failed" in branch_events
+    assert "node_finished" not in branch_events

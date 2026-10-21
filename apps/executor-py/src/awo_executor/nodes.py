@@ -148,22 +148,26 @@ def execute_unsupported(node_type: str, state: dict[str, Any]) -> NodeResult:
 
 
 def _pick_edge_target(edges: list[dict[str, Any]], kind: str) -> str | None:
+    """Resolve an outgoing edge by exact ``kind`` match only.
+
+    Branch must pass ``success`` or ``failure`` with no aliasing; a missing
+    kind fails the node. Linear routing uses :func:`pick_default_next`, which
+    may try ``default`` then ``success`` separately.
+    """
     for e in edges:
         if e.get("kind") == kind:
             target = e.get("target")
             if isinstance(target, str) and target:
                 return target
-    if kind in ("success", "default"):
-        for e in edges:
-            if e.get("kind") in ("default", "success"):
-                target = e.get("target")
-                if isinstance(target, str) and target:
-                    return target
     return None
 
 
 def pick_default_next(edges: list[dict[str, Any]]) -> str | None:
-    """Next node for linear nodes (Start/Transform/Emit/LLM)."""
+    """Next node for linear nodes (Start/Transform/Emit/LLM).
+
+    Prefers ``default``, then ``success`` (exact kinds only — no cross-alias
+    inside a single lookup). Falls back to a sole outgoing edge.
+    """
     for preferred in ("default", "success"):
         t = _pick_edge_target(edges, preferred)
         if t:

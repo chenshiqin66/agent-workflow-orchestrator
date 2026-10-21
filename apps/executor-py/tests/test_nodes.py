@@ -71,6 +71,52 @@ def test_branch_missing_edge_fails():
     ).lower()
 
 
+def test_branch_does_not_fallback_to_default_for_success():
+    """True Branch must require kind=success; default alone is not enough."""
+    result = execute_branch(
+        {"expression": "state.ok == true"},
+        {"ok": True},
+        edges=[{"kind": "default", "target": "only"}],
+    )
+    assert not result.ok
+    assert result.error_code == "missing_edge"
+    assert "success" in (result.error or "")
+    assert result.next_node_id is None
+
+
+def test_branch_does_not_fallback_to_default_for_failure():
+    """False Branch must require kind=failure; default alone is not enough."""
+    result = execute_branch(
+        {"expression": "state.ok == true"},
+        {"ok": False},
+        edges=[{"kind": "default", "target": "only"}],
+    )
+    assert not result.ok
+    assert result.error_code == "missing_edge"
+    assert "failure" in (result.error or "")
+    assert result.next_node_id is None
+
+
+def test_comparison_type_error_is_expression_error():
+    with pytest.raises(ExpressionError) as ei:
+        eval_expression("state.n > 1", {"n": "x"})
+    assert "type error" in str(ei.value).lower() or "comparison" in str(ei.value).lower()
+
+
+def test_branch_comparison_type_error_fails_node():
+    result = execute_branch(
+        {"expression": "state.n > 1"},
+        {"n": "x"},
+        edges=[
+            {"kind": "success", "target": "a"},
+            {"kind": "failure", "target": "b"},
+        ],
+    )
+    assert not result.ok
+    assert result.error_code == "invalid_expression"
+    assert result.next_node_id is None
+
+
 def test_emit_carries_message():
     result = execute_emit({"message": "hello"}, {"ok": True})
     assert result.ok

@@ -82,18 +82,23 @@ def _eval_node(node: ast.AST, state: dict[str, Any]) -> Any:
             right = _eval_node(comparator, state)
             if not isinstance(op, _ALLOWED_CMP):
                 raise ExpressionError(f"disallowed comparison: {type(op).__name__}")
-            if isinstance(op, ast.Eq) and not (left == right):
-                return False
-            if isinstance(op, ast.NotEq) and not (left != right):
-                return False
-            if isinstance(op, ast.Lt) and not (left < right):
-                return False
-            if isinstance(op, ast.LtE) and not (left <= right):
-                return False
-            if isinstance(op, ast.Gt) and not (left > right):
-                return False
-            if isinstance(op, ast.GtE) and not (left >= right):
-                return False
+            try:
+                if isinstance(op, ast.Eq) and not (left == right):
+                    return False
+                if isinstance(op, ast.NotEq) and not (left != right):
+                    return False
+                if isinstance(op, ast.Lt) and not (left < right):
+                    return False
+                if isinstance(op, ast.LtE) and not (left <= right):
+                    return False
+                if isinstance(op, ast.Gt) and not (left > right):
+                    return False
+                if isinstance(op, ast.GtE) and not (left >= right):
+                    return False
+            except TypeError as e:
+                raise ExpressionError(
+                    f"comparison type error: {type(left).__name__} vs {type(right).__name__}"
+                ) from e
             left = right
         return True
 
