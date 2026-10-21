@@ -6,6 +6,7 @@ import { authMiddleware, type AuthVariables } from "./middleware/auth";
 import { flowsRoutes } from "./routes/flows";
 import { flowVersionRoutes } from "./routes/flow-versions";
 import { runsRoutes } from "./routes/runs";
+import { internalRunsRoutes } from "./routes/internal-runs";
 
 export const PACKAGE = "@awo/control-plane";
 
@@ -15,15 +16,21 @@ app.use(
   "*",
   cors({
     origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
-    allowHeaders: ["Content-Type", "X-User-Id"],
+    allowHeaders: ["Content-Type", "X-User-Id", "X-Executor-Token"],
     allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
   }),
 );
 
 app.get("/health", (c) => c.json({ ok: true, package: PACKAGE }));
 
+// Mount internal executor callbacks before user auth (own token middleware)
+app.route("/", internalRunsRoutes);
+
 app.use("*", async (c, next) => {
   if (c.req.path === "/health" || c.req.method === "OPTIONS") {
+    return next();
+  }
+  if (c.req.path.startsWith("/internal/")) {
     return next();
   }
   return authMiddleware(c, next);

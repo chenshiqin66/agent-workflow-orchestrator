@@ -10,6 +10,7 @@ import {
   runEvents,
   runs,
 } from "../db/schema";
+import { pushJobToExecutor } from "./executor-client";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -24,11 +25,11 @@ function httpError(message: string, status: number): Error {
 }
 
 /**
- * Hook for Task 4: push job to executor after create.
- * No-op in Task 3 so tests can create runs without a live executor.
+ * Push job to the Python executor after create.
+ * Network failures are handled inside pushJobToExecutor (run → failed + log event).
  */
-export async function dispatchJob(_runId: string): Promise<void> {
-  // TODO(Task 4): call executor-client.dispatchJob
+export async function dispatchJob(runId: string): Promise<void> {
+  await pushJobToExecutor(runId);
 }
 
 async function getFlowOwned(flowId: string, workspaceId: string) {
@@ -112,7 +113,6 @@ export async function createTestRun(
     });
   });
 
-  // Stub — Task 4 wires real executor push
   await dispatchJob(runId);
 
   return {

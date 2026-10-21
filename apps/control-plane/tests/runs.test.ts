@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 
 if (!process.env.DATABASE_URL) {
@@ -6,6 +6,12 @@ if (!process.env.DATABASE_URL) {
     "DATABASE_URL is required for @awo/control-plane tests (e.g. postgres://awo:awo@localhost:5432/awo). Local-dev without DB: skip running this package's tests.",
   );
 }
+
+process.env.EXECUTOR_TOKEN = process.env.EXECUTOR_TOKEN ?? "test-executor-token";
+process.env.EXECUTOR_URL =
+  process.env.EXECUTOR_URL ?? "http://127.0.0.1:8790";
+process.env.CALLBACK_BASE_URL =
+  process.env.CALLBACK_BASE_URL ?? "http://127.0.0.1:8787";
 
 const headers = {
   "X-User-Id": "u_dev",
@@ -36,6 +42,12 @@ describe("runs API", () => {
   let app: { request: typeof import("../src/index").app.request };
 
   beforeAll(async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      ),
+    );
     const mod = await import("../src/index");
     app = mod.app;
   });
