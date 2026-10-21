@@ -1,15 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FlowGraph } from "@awo/graph-schema";
 import { FlowCanvas } from "./canvas/FlowCanvas";
-import { api } from "./api/client";
+import { NodePalette } from "./canvas/NodePalette";
+import {
+  ApiError,
+  createApiClient,
+  type ApiClient,
+} from "./api/client";
 import { saveThenPublish } from "./api/save-then-publish";
 import { SAMPLE_M2_GRAPH } from "./sample-m2-graph";
 import { SAMPLE_M3_GRAPH } from "./sample-m3-graph";
 import { TestRunPanel } from "./run/TestRunPanel";
 import { toggleBreakpointOnServer } from "./run/breakpoints";
+import {
+  USER_STORAGE_KEY,
+  UserSwitcher,
+  roleForUser,
+} from "./auth/UserSwitcher";
+import { AssetsPanel } from "./assets/AssetsPanel";
+import "./styles/m4.css";
 
 const PROJECT_ID = "p_demo";
 const FLOW_ID_KEY = "awo.demoFlowId";
+
+function readStoredUserId(): string {
+  try {
+    const v = localStorage.getItem(USER_STORAGE_KEY);
+    if (v && ["u_dev", "u_builder", "u_viewer", "u_admin"].includes(v)) return v;
+  } catch {
+    /* ignore */
+  }
+  return "u_dev";
+}
 
 function emptyGraph(id: string): FlowGraph {
   return {
@@ -33,6 +55,11 @@ function withM3Sample(id: string): FlowGraph {
 }
 
 export function App() {
+  const [userId, setUserId] = useState(readStoredUserId);
+  const client: ApiClient = useMemo(
+    () => createApiClient({ userId }),
+    [userId],
+  );
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowName, setFlowName] = useState("未命名流程");
   const [graph, setGraph] = useState<FlowGraph>(() => withSampleContent("local"));
@@ -82,7 +109,7 @@ export function App() {
       setBusy(true);
       setStatus(`加载 ${id}…`);
       try {
-        const detail = await api.getFlow(id);
+        const detail = await client.getFlow(id);
         applyLoaded(detail);
         setStatus(`已打开「${detail.name}」`);
       } catch (e) {
@@ -92,7 +119,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [applyLoaded],
+    [applyLoaded, client],
   );
 
   useEffect(() => {
@@ -108,10 +135,10 @@ export function App() {
     setBusy(true);
     setStatus("创建流程…");
     try {
-      const created = await api.createFlow(PROJECT_ID, "客服流水线");
+      const created = await client.createFlow(PROJECT_ID, "客服流水线");
       const seeded = withSampleContent(created.id);
-      const saved = await api.saveDraft(created.id, seeded);
-      const detail = await api.getFlow(created.id);
+      const saved = await client.saveDraft(created.id, seeded);
+      const detail = await client.getFlow(created.id);
       applyLoaded(detail);
       setDraftHash(saved.schemaHash);
       setStatus(`已创建并写入演示图（hash ${saved.schemaHash.slice(0, 8)}…）`);
@@ -153,7 +180,7 @@ export function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await api.getBreakpoints(activeRunId);
+        const res = await client.getBreakpoints(activeRunId);
         if (!cancelled) setBreakpointNodeIds(res.node_ids);
       } catch {
         /* run may not be ready yet */
@@ -162,7 +189,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeRunId]);
+  }, [activeRunId, client]);
 
   const onToggleBreakpoint = useCallback(
     async (nodeId: string) => {
@@ -171,7 +198,7 @@ export function App() {
         return;
       }
       try {
-        const next = await toggleBreakpointOnServer(api, activeRunId, nodeId);
+        const next = await toggleBreakpointOnServer(client, activeRunId, nodeId);
         setBreakpointNodeIds(next);
         setStatus(
           next.includes(nodeId)
@@ -182,8 +209,38 @@ export function App() {
         setStatus(`断点切换失败: ${(e as Error).message}`);
       }
     },
-    [activeRunId],
+    [activeRunId, client],
   );
+
+  const onUserChange = (next: string) => {
+    setUserId(next);
+    try {
+      localStorage.setItem(USER_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+    setStatus(`已切换用户 ${next}（${roleForUser(next)}）`);
+  };
+
+  const onAddNodeType = (typeKey: string) => {
+    setGraph((g) => {
+      const id = `${typeKey.toLowerCase()}_${Date.now()}`;
+      return {
+        ...g,
+        nodes: [
+          ...g.nodes,
+          {
+            id,
+            type: typeKey,
+            config: {},
+            ui: { x: 120 + g.nodes.length * 28, y: 120 + (g.nodes.length % 5) * 36 },
+          },
+        ],
+      };
+    });
+    setGraphEpoch((n) => n + 1);
+    setStatus(`已添加节点 ${typeKey}`);
+  };
 
   const onSave = async () => {
     if (!flowId) {
@@ -193,7 +250,7 @@ export function App() {
     setBusy(true);
     setStatus("保存草稿…");
     try {
-      const result = await api.saveDraft(flowId, graph);
+      const result = await client.saveDraft(flowId, graph);
       setDraftHash(result.schemaHash);
       setStatus(
         `草稿已保存 v${result.version} hash=${result.schemaHash.slice(0, 12)}…`,
@@ -213,16 +270,32 @@ export function App() {
     setBusy(true);
     setStatus("保存草稿并发布…");
     try {
-      const { saved, published } = await saveThenPublish(api, flowId, graph);
+      const { saved, published } = await saveThenPublish(client, flowId, graph);
       setDraftHash(saved.schemaHash);
       setPublishedVersionId(published.versionId);
-      const detail = await api.getFlow(flowId);
+      const detail = await client.getFlow(flowId);
       setPublishedVersionId(detail.publishedVersionId);
       setStatus(
         `已保存并发布 ${published.versionId}（hash=${saved.schemaHash.slice(0, 12)}…）`,
       );
     } catch (e) {
-      setStatus(`发布失败: ${(e as Error).message}`);
+      if (e instanceof ApiError && e.body && typeof e.body === "object") {
+        const body = e.body as {
+          error?: string;
+          checks?: { id: string; ok: boolean; message?: string }[];
+        };
+        if (body.error === "publish_gate_failed" && Array.isArray(body.checks)) {
+          const msgs = body.checks
+            .filter((c) => !c.ok)
+            .map((c) => c.message ?? c.id)
+            .join("; ");
+          setStatus(`发布门禁失败: ${msgs || body.error}`);
+        } else {
+          setStatus(`发布失败: ${e.message}`);
+        }
+      } else {
+        setStatus(`发布失败: ${(e as Error).message}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -273,6 +346,7 @@ export function App() {
       <header className="awo-app__header">
         <div className="awo-app__title">Workflow: {flowName}</div>
         <div className="awo-app__toolbar">
+          <UserSwitcher userId={userId} onChange={onUserChange} disabled={busy} />
           <button type="button" disabled={busy} onClick={() => void onCreate()}>
             新建演示流程
           </button>
@@ -315,6 +389,7 @@ export function App() {
           flowId={flowId}
           publishedVersionId={publishedVersionId}
           graph={graph}
+          client={client}
           busy={busy}
           onStatus={setStatus}
           selectedNodeId={selectedNodeId}
@@ -323,6 +398,14 @@ export function App() {
           preferM3Input
           onRunIdChange={setActiveRunId}
         />
+        <aside className="awo-app__side">
+          <NodePalette
+            client={client}
+            disabled={busy}
+            onAddType={onAddNodeType}
+          />
+          <AssetsPanel client={client} userId={userId} onStatus={setStatus} />
+        </aside>
       </div>
     </div>
   );

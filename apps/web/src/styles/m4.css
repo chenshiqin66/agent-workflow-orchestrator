@@ -1,0 +1,69 @@
+.awo-user-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.awo-user-switcher select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: #fff;
+}
+.awo-app__side {
+  width: 260px;
+  max-width: 32vw;
+  border-left: 1px solid rgba(59, 130, 246, 0.15);
+  background: rgba(255, 255, 255, 0.75);
+  overflow: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.awo-node-palette__title,
+.awo-assets-panel__title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.awo-node-palette__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.awo-node-palette__list button {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.awo-node-palette__error {
+  color: #b91c1c;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.awo-assets-panel__role {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 8px;
+}
+.awo-assets-panel__create {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.awo-assets-panel__create input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+}
+.awo-assets-panel section h4 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+.awo-assets-panel ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+.awo-assets-panel__muted {
+  color: #64748b;
+}

@@ -118,6 +118,52 @@ export type NodeDef = {
   minRole: string;
 };
 
+export type GateCheck = { id: string; ok: boolean; message?: string };
+
+export type ApiErrorBody = {
+  error?: string;
+  checks?: GateCheck[];
+  [key: string]: unknown;
+};
+
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export type Tool = {
+  id: string;
+  name: string;
+  kind: string;
+  config: unknown;
+  allowed_roles: string[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Model = {
+  id: string;
+  name: string;
+  provider: string;
+  config: unknown;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type KnowledgeBase = {
+  id: string;
+  name: string;
+  config: unknown;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 function resolveBase(baseUrl?: string): string {
   if (baseUrl) return baseUrl.replace(/\/$/, "");
   const env =
@@ -164,7 +210,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
         typeof (body as { error: unknown }).error === "string"
           ? (body as { error: string }).error
           : `HTTP ${res.status}`;
-      throw new Error(errMsg);
+      throw new ApiError(errMsg, res.status, body);
     }
 
     return body as T;
@@ -196,10 +242,78 @@ export function createApiClient(options: ApiClientOptions = {}) {
     listNodeDefs() {
       return request<NodeDef[]>(`/node-defs`);
     },
-    createTestRun(flowId: string, input: unknown) {
+    createTestRun(
+      flowId: string,
+      input: unknown,
+      opts?: { graphSource?: "draft" | "published" },
+    ) {
+      const body: Record<string, unknown> = { input };
+      if (opts?.graphSource) body.graph_source = opts.graphSource;
       return request<CreateTestRunResult>(`/flows/${flowId}/test-runs`, {
         method: "POST",
-        body: JSON.stringify({ input }),
+        body: JSON.stringify(body),
+      });
+    },
+    createRun(
+      flowId: string,
+      input: unknown,
+      opts?: { graphSource?: "draft" | "published" },
+    ) {
+      const body: Record<string, unknown> = { input };
+      if (opts?.graphSource) body.graph_source = opts.graphSource;
+      return request<CreateTestRunResult>(`/flows/${flowId}/test-runs`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    listTools() {
+      return request<Tool[]>(`/assets/tools`);
+    },
+    createTool(body: {
+      name: string;
+      kind: string;
+      config?: Record<string, unknown>;
+      allowed_roles?: string[];
+    }) {
+      return request<Tool>(`/assets/tools`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    deleteTool(id: string) {
+      return request<void>(`/assets/tools/${id}`, { method: "DELETE" });
+    },
+    listModels() {
+      return request<Model[]>(`/assets/models`);
+    },
+    createModel(body: {
+      name: string;
+      provider: string;
+      config?: Record<string, unknown>;
+    }) {
+      return request<Model>(`/assets/models`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    deleteModel(id: string) {
+      return request<void>(`/assets/models/${id}`, { method: "DELETE" });
+    },
+    listKnowledgeBases() {
+      return request<KnowledgeBase[]>(`/assets/knowledge-bases`);
+    },
+    createKnowledgeBase(body: {
+      name: string;
+      config?: Record<string, unknown>;
+    }) {
+      return request<KnowledgeBase>(`/assets/knowledge-bases`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    deleteKnowledgeBase(id: string) {
+      return request<void>(`/assets/knowledge-bases/${id}`, {
+        method: "DELETE",
       });
     },
     getRun(runId: string) {

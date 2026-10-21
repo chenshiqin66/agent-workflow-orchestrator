@@ -81,4 +81,36 @@ describe("api client", () => {
 
     await expect(client.getFlow("missing")).rejects.toThrow("flow not found");
   });
+
+  it("publish throws with checks when gate fails", async () => {
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          error: "publish_gate_failed",
+          checks: [{ id: "required_config", ok: false, message: "missing url" }],
+        }),
+        { status: 400 },
+      );
+    const client = createApiClient({ fetchImpl, userId: "u_builder" });
+    await expect(client.publish("flow_1")).rejects.toMatchObject({
+      status: 400,
+      body: { error: "publish_gate_failed" },
+    });
+  });
+
+  it("listTools GETs /assets/tools", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/assets/tools");
+      return new Response(JSON.stringify([{ id: "t1", name: "echo", kind: "function", config: {}, allowed_roles: [] }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const client = createApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      userId: "u_dev",
+    });
+    const tools = await client.listTools();
+    expect(tools[0]?.name).toBe("echo");
+  });
 });
