@@ -230,4 +230,4 @@ Audit: existing `flow.publish` audit remains; on gate failure do **not** write p
 
 ## 10. Approval
 
-Written for execution planning; implement via `docs/superpowers/plans/2026-10-22-m4-roles-assets-publish-gate.md`.
+Approved for execution; implemented via `docs/superpowers/plans/2026-10-22-m4-roles-assets-publish-gate.md` (branch `feature/m4-roles-assets-publish-gate`).

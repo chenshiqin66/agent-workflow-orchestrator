@@ -1,6 +1,6 @@
 # Agent Workflow Orchestrator
 
-拖拽式智能体/流程编排系统（M1：画布 + 控制面草稿/发布；M2：Python 执行器 + 试运行时间线；M3：断点 / signal / 人工审批）。
+拖拽式智能体/流程编排系统（M1：画布 + 控制面草稿/发布；M2：Python 执行器 + 试运行时间线；M3：断点 / signal / 人工审批；M4：角色 / 资产注册表 / 发布门禁）。
 
 - **架构（方案 A）**：TypeScript 控制面 + 语言无关 Graph JSON + HTTP 执行器（回调）。
 - **Monorepo**：`apps/web`（Vite + React + XYFlow）、`apps/control-plane`（Hono + Drizzle + PostgreSQL）、`apps/executor-py`（FastAPI）、`packages/graph-schema` / `packages/run-protocol`。
@@ -8,6 +8,7 @@
 - **M1 实现计划**：`docs/superpowers/plans/2026-10-21-m1-graph-canvas-control-plane.md`
 - **M2 实现计划**：`docs/superpowers/plans/2026-10-21-m2-python-executor-test-run-timeline.md`
 - **M3 设计 / 实现计划**：`docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md` · `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
+- **M4 设计 / 实现计划**：`docs/superpowers/specs/2026-10-22-m4-roles-assets-publish-gate-design.md` · `docs/superpowers/plans/2026-10-22-m4-roles-assets-publish-gate.md`
 - **Run protocol 草图**：`docs/run-protocol-openapi.md`
 
 ## Prerequisites
@@ -58,7 +59,7 @@ Open `http://localhost:5173`.
 | `EXECUTOR_TOKEN` | control-plane **and** executor | Required shared secret; dispatch fails if unset on control-plane |
 | `CALLBACK_BASE_URL` | control-plane (embedded in job) | `http://127.0.0.1:8787` — executor callbacks |
 | `VITE_API_BASE` | web | `http://localhost:8787` (see `apps/web/.env.example`) |
-| `X-User-Id` | HTTP header (stub auth) | Web sends `u_dev`. Real OIDC in M4. |
+| `X-User-Id` | HTTP header (stub auth) | Web user switcher: `u_admin` / `u_dev` / `u_builder` / `u_viewer`. OIDC deferred (post-M4). |
 
 Copy `apps/web/.env.example` → `apps/web/.env` if you need a non-default API base.
 
@@ -68,8 +69,8 @@ Copy `apps/web/.env.example` → `apps/web/.env` if you need a non-default API b
 |---|---|
 | `@awo/graph-schema` | Shared Zod graph + content hash |
 | `@awo/run-protocol` | Run status / events / JobPayload / callback Zod |
-| `@awo/control-plane` | REST: flows, publish, test-runs, event poll, signal/state/breakpoints, executor callbacks |
-| `@awo/web` | XYFlow canvas + 试运行 panel / timeline / SignalPanel / breakpoints |
+| `@awo/control-plane` | REST: flows, publish gate, test-runs (published/draft), assets, roles, signal/state/breakpoints, executor callbacks |
+| `@awo/web` | XYFlow canvas + 试运行 / SignalPanel / user switcher / node palette / assets panel |
 | `apps/executor-py` | Python graph engine + `POST /v1/jobs` |
 
 ## M1 acceptance checklist
@@ -122,6 +123,38 @@ How to run the sample locally: start Postgres + migrate/seed, export `EXECUTOR_T
 
 Out of scope for M3: explicit `step` API, WebSocket/SSE push, multi-approver routing / SLA, M4 roles/assets/publish gate, M5 subflow/templates/metrics, draft dry-run.
 
+
+## M4 acceptance checklist
+
+Requires Postgres migrated (`0004_m4_roles_assets_gate`) + re-seeded demo users/assets. Stub auth remains `X-User-Id`.
+
+**Roles** (rank: viewer=0 < builder=1 < developer=2 < admin=3):
+
+| id | role |
+|---|---|
+| `u_admin` | admin |
+| `u_dev` | developer |
+| `u_builder` | builder |
+| `u_viewer` | viewer |
+
+1. **Node visibility** — Builder `GET /node-defs` omits `Code` / `Breakpoint`; developer+ sees them. Web palette loads filtered defs.
+2. **Mutating guards** — Viewer cannot save draft / publish / create runs / signal (403). Builder can edit/publish/test published; only developer+ can `graph_source: "draft"` test-runs and asset writes.
+3. **Assets** — `GET/POST/PATCH/DELETE /assets/tools|models|knowledge-bases`; seed samples `demo_echo` / `demo_stub` / `demo_kb`.
+4. **Publish gate** — Before publish: `required_config` (e.g. HTTP needs `url`), `successful_test_run` (skipped on first publish / bootstrap), `role_nodes`. Failure → `400 { error: "publish_gate_failed", checks: [...] }`.
+5. **Draft unlock** — After first publish, edit draft → publish blocked until a succeeded test-run matches the draft `schema_hash` (developer draft test-run is the intended path).
+6. **Web** — User switcher, role-filtered palette, assets panel, gate errors in status line.
+7. **Integration**:
+
+```bash
+export DATABASE_URL=postgres://awo:awo@localhost:5432/awo
+export EXECUTOR_TOKEN=test-executor-token-m4
+pnpm test:m4
+```
+
+`pnpm test:m2` and `pnpm test:m3` must remain green after M4.
+
+Out of scope for M4: OIDC / SSO, secrets vault, multi-approver publish, M5 subflow/templates/metrics, WS push.
+
 ## Tests
 
 ```bash
@@ -133,6 +166,7 @@ pnpm --filter @awo/control-plane test   # needs DATABASE_URL
 pnpm --filter @awo/web test
 pnpm test:m2                            # control-plane + live executor happy path
 pnpm test:m3                            # pause → signal → resume (live executor)
+pnpm test:m4                            # roles / assets / publish gate
 cd apps/executor-py && .venv/bin/python -m pytest
 ```
 
