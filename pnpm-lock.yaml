@@ -98,6 +98,25 @@ importers:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@22.20.5)
 
+  packages/run-protocol:
+    dependencies:
+      '@awo/graph-schema':
+        specifier: workspace:*
+        version: link:../graph-schema
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@22.20.5)
+
 packages:
 
   '@babel/code-frame@7.29.7':
