@@ -19,6 +19,22 @@ export function isActiveRunStatus(status: RunStatus | null | undefined): boolean
   return status != null && ACTIVE_RUN_STATUSES.has(status);
 }
 
+/**
+ * Decide whether the poll interval should stay armed after a tick.
+ * - On success: only while status is active.
+ * - On fetch/parse error: keep polling while status is still active OR still unknown
+ *   (do not stop forever on a transient failure).
+ */
+export function nextPollingState(args: {
+  fetchOk: boolean;
+  status: RunStatus | null | undefined;
+}): boolean {
+  if (args.fetchOk) {
+    return isActiveRunStatus(args.status);
+  }
+  return args.status == null || isActiveRunStatus(args.status);
+}
+
 /** Merge events by seq ascending; later duplicates with same seq replace earlier. */
 export function mergeRunEvents(
   existing: RunEvent[],
@@ -55,6 +71,8 @@ export function useRunPoll(runId: string | null, options: Options = {}) {
 
   const eventsRef = useRef(events);
   eventsRef.current = events;
+  const runRef = useRef(run);
+  runRef.current = run;
 
   const tick = useCallback(async () => {
     if (!runId) return;
@@ -70,10 +88,15 @@ export function useRunPoll(runId: string | null, options: Options = {}) {
         setEvents((prev) => mergeRunEvents(prev, next));
       }
       setError(null);
-      setPolling(isActiveRunStatus(detail.status));
+      setPolling(nextPollingState({ fetchOk: true, status: detail.status }));
     } catch (e) {
       setError((e as Error).message);
-      setPolling(false);
+      setPolling(
+        nextPollingState({
+          fetchOk: false,
+          status: runRef.current?.status,
+        }),
+      );
     }
   }, [client, runId]);
 
