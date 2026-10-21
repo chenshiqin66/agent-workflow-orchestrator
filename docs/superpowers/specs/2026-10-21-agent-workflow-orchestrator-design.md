@@ -1,7 +1,7 @@
 # Design Spec: 智能体可视化编排系统（拖拽流程）
 
 - Date: 2026-10-21
-- Status: draft for user review
+- Status: approved; M1 plan in `docs/superpowers/plans/2026-10-21-m1-graph-canvas-control-plane.md`
 - Product positioning: 编排画布 + 运行时调试/回放（混合）
 - Architecture: 方案 A — TypeScript 控制面 + 语言无关 Graph JSON + 可插拔 HTTP/gRPC 执行器
 
