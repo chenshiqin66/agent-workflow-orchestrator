@@ -133,3 +133,48 @@ export const runSignals = pgTable("run_signals", {
   status: text("status").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** M4: workspace tool registry */
+export const tools = pgTable(
+  "tools",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull(),
+    configJson: jsonb("config_json").notNull(),
+    allowedRoles: jsonb("allowed_roles").notNull(), // string[]
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("tools_workspace_name").on(t.workspaceId, t.name)],
+);
+
+/** M4: workspace model registry */
+export const models = pgTable(
+  "models",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    provider: text("provider").notNull(),
+    name: text("name").notNull(),
+    configJson: jsonb("config_json").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("models_workspace_name").on(t.workspaceId, t.name)],
+);
+
+/** M4: workspace knowledge base registry */
+export const knowledgeBases = pgTable(
+  "knowledge_bases",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull(),
+    configJson: jsonb("config_json").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("knowledge_bases_workspace_name").on(t.workspaceId, t.name)],
+);

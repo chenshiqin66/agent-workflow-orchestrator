@@ -7,6 +7,7 @@ import { flowsRoutes } from "./routes/flows";
 import { flowVersionRoutes } from "./routes/flow-versions";
 import { runsRoutes } from "./routes/runs";
 import { internalRunsRoutes } from "./routes/internal-runs";
+import { assetsRoutes } from "./routes/assets";
 
 export const PACKAGE = "@awo/control-plane";
 
@@ -17,7 +18,7 @@ app.use(
   cors({
     origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     allowHeaders: ["Content-Type", "X-User-Id", "X-Executor-Token"],
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }),
 );
 
@@ -39,6 +40,7 @@ app.use("*", async (c, next) => {
 app.route("/", flowsRoutes);
 app.route("/", flowVersionRoutes);
 app.route("/", runsRoutes);
+app.route("/", assetsRoutes);
 
 export { app };
 

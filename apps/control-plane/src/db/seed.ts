@@ -1,8 +1,11 @@
 import { db, queryClient } from "./client";
 import {
+  knowledgeBases,
   memberships,
+  models,
   nodeDefs,
   projects,
+  tools,
   users,
   workspaces,
 } from "./schema";
@@ -161,8 +164,69 @@ async function seed() {
       });
   }
 
+
+  await db
+    .insert(tools)
+    .values({
+      id: "tool_demo_echo",
+      workspaceId: "ws_demo",
+      name: "demo_echo",
+      kind: "function",
+      configJson: { secret_ref: "env:DEMO_ECHO" },
+      allowedRoles: ["builder", "developer", "admin"],
+    })
+    .onConflictDoUpdate({
+      target: tools.id,
+      set: {
+        name: "demo_echo",
+        kind: "function",
+        configJson: { secret_ref: "env:DEMO_ECHO" },
+        allowedRoles: ["builder", "developer", "admin"],
+        workspaceId: "ws_demo",
+        updatedAt: new Date(),
+      },
+    });
+
+  await db
+    .insert(models)
+    .values({
+      id: "model_demo_stub",
+      workspaceId: "ws_demo",
+      provider: "stub",
+      name: "demo_stub",
+      configJson: {},
+    })
+    .onConflictDoUpdate({
+      target: models.id,
+      set: {
+        provider: "stub",
+        name: "demo_stub",
+        configJson: {},
+        workspaceId: "ws_demo",
+        updatedAt: new Date(),
+      },
+    });
+
+  await db
+    .insert(knowledgeBases)
+    .values({
+      id: "kb_demo",
+      workspaceId: "ws_demo",
+      name: "demo_kb",
+      configJson: {},
+    })
+    .onConflictDoUpdate({
+      target: knowledgeBases.id,
+      set: {
+        name: "demo_kb",
+        configJson: {},
+        workspaceId: "ws_demo",
+        updatedAt: new Date(),
+      },
+    });
+
   console.log(
-    "seed complete: u_admin|u_dev|u_builder|u_viewer, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM|Transform|Emit|HumanApproval|Input|Breakpoint|Code",
+    "seed complete: u_admin|u_dev|u_builder|u_viewer, ws_demo, p_demo, node_defs + tool_demo_echo|model_demo_stub|kb_demo",
   );
 }
 
