@@ -19,6 +19,7 @@ describe("seed", () => {
     expect(keys).toEqual([
       "Branch",
       "Breakpoint",
+      "Code",
       "Emit",
       "End",
       "HTTP",
@@ -61,5 +62,10 @@ describe("seed", () => {
     expect((human?.uiMeta as { color?: string })?.color).toBe("orange");
     expect((input?.uiMeta as { color?: string })?.color).toBe("teal");
     expect((bp?.uiMeta as { color?: string })?.color).toBe("red");
+
+    const code = defs.find((d) => d.typeKey === "Code");
+    expect(code?.category).toBe("integration");
+    expect(code?.minRole).toBe("developer");
+    expect(bp?.minRole).toBe("developer");
   });
 });

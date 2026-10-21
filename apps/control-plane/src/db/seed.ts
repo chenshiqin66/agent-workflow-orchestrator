@@ -21,6 +21,7 @@ const UI_META: Record<
   HumanApproval: { color: "orange", icon: "check", shape: "rounded" },
   Input: { color: "teal", icon: "form", shape: "rounded" },
   Breakpoint: { color: "red", icon: "stop", shape: "diamond" },
+  Code: { color: "purple", icon: "code", shape: "rounded" },
 };
 
 const NODE_CATEGORIES: Record<string, string> = {
@@ -34,6 +35,7 @@ const NODE_CATEGORIES: Record<string, string> = {
   HumanApproval: "control",
   Input: "control",
   Breakpoint: "debug",
+  Code: "integration",
 };
 
 const NODE_TYPES = [
@@ -47,20 +49,55 @@ const NODE_TYPES = [
   "HumanApproval",
   "Input",
   "Breakpoint",
+  "Code",
 ] as const;
 
+const NODE_MIN_ROLE: Record<(typeof NODE_TYPES)[number], string> = {
+  Start: "builder",
+  End: "builder",
+  Branch: "builder",
+  HTTP: "builder",
+  LLM: "builder",
+  Transform: "builder",
+  Emit: "builder",
+  HumanApproval: "builder",
+  Input: "builder",
+  Breakpoint: "developer",
+  Code: "developer",
+};
+
+const SEED_USERS = [
+  { id: "u_admin", email: "admin@example.com", name: "Admin User", role: "admin", memId: "mem_admin_demo" },
+  { id: "u_dev", email: "dev@example.com", name: "Dev User", role: "developer", memId: "mem_dev_demo" },
+  { id: "u_builder", email: "builder@example.com", name: "Builder User", role: "builder", memId: "mem_builder_demo" },
+  { id: "u_viewer", email: "viewer@example.com", name: "Viewer User", role: "viewer", memId: "mem_viewer_demo" },
+] as const;
+
+function configSchemaFor(typeKey: string): Record<string, unknown> {
+  if (typeKey === "HTTP") {
+    return {
+      type: "object",
+      required: ["url"],
+      properties: { url: { type: "string" } },
+    };
+  }
+  return { type: "object", properties: {} };
+}
+
 async function seed() {
-  await db
-    .insert(users)
-    .values({
-      id: "u_dev",
-      email: "dev@example.com",
-      name: "Dev User",
-    })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: { email: "dev@example.com", name: "Dev User" },
-    });
+  for (const u of SEED_USERS) {
+    await db
+      .insert(users)
+      .values({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+      })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { email: u.email, name: u.name },
+      });
+  }
 
   await db
     .insert(workspaces)
@@ -70,18 +107,20 @@ async function seed() {
       set: { name: "Demo Workspace" },
     });
 
-  await db
-    .insert(memberships)
-    .values({
-      id: "mem_dev_demo",
-      workspaceId: "ws_demo",
-      userId: "u_dev",
-      role: "developer",
-    })
-    .onConflictDoUpdate({
-      target: memberships.id,
-      set: { role: "developer", workspaceId: "ws_demo", userId: "u_dev" },
-    });
+  for (const u of SEED_USERS) {
+    await db
+      .insert(memberships)
+      .values({
+        id: u.memId,
+        workspaceId: "ws_demo",
+        userId: u.id,
+        role: u.role,
+      })
+      .onConflictDoUpdate({
+        target: memberships.id,
+        set: { role: u.role, workspaceId: "ws_demo", userId: u.id },
+      });
+  }
 
   await db
     .insert(projects)
@@ -96,6 +135,8 @@ async function seed() {
     });
 
   for (const typeKey of NODE_TYPES) {
+    const minRole = NODE_MIN_ROLE[typeKey];
+    const configSchema = configSchemaFor(typeKey);
     await db
       .insert(nodeDefs)
       .values({
@@ -103,25 +144,25 @@ async function seed() {
         workspaceId: "ws_demo",
         typeKey,
         category: NODE_CATEGORIES[typeKey],
-        configSchema: { type: "object", properties: {} },
+        configSchema,
         uiMeta: UI_META[typeKey],
-        minRole: "builder",
+        minRole,
       })
       .onConflictDoUpdate({
         target: nodeDefs.id,
         set: {
           typeKey,
           category: NODE_CATEGORIES[typeKey],
-          configSchema: { type: "object", properties: {} },
+          configSchema,
           uiMeta: UI_META[typeKey],
-          minRole: "builder",
+          minRole,
           workspaceId: "ws_demo",
         },
       });
   }
 
   console.log(
-    "seed complete: u_dev, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM|Transform|Emit|HumanApproval|Input|Breakpoint",
+    "seed complete: u_admin|u_dev|u_builder|u_viewer, ws_demo, p_demo, node_defs Start|End|Branch|HTTP|LLM|Transform|Emit|HumanApproval|Input|Breakpoint|Code",
   );
 }
 

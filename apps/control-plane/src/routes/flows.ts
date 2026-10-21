@@ -34,7 +34,7 @@ flowsRoutes.get("/flows/:flowId", async (c) => {
 });
 
 flowsRoutes.get("/node-defs", async (c) => {
-  const defs = await listNodeDefs(c.get("workspaceId"));
+  const defs = await listNodeDefs(c.get("workspaceId"), c.get("role"));
   return c.json(
     defs.map((d) => ({
       id: d.id,

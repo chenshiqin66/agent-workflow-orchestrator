@@ -1,4 +1,5 @@
 import { and, eq, max } from "drizzle-orm";
+import { roleAtLeast } from "../auth/roles";
 import { parseFlowGraph, hashGraph, type FlowGraph } from "@awo/graph-schema";
 import { db } from "../db/client";
 import {
@@ -269,11 +270,12 @@ export async function publishFlow(
   });
 }
 
-export async function listNodeDefs(workspaceId: string) {
-  return db
+export async function listNodeDefs(workspaceId: string, role: string) {
+  const rows = await db
     .select()
     .from(nodeDefs)
     .where(eq(nodeDefs.workspaceId, workspaceId));
+  return rows.filter((d) => roleAtLeast(role, d.minRole));
 }
 
 async function getFlowOwned(flowId: string, workspaceId: string) {
