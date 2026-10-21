@@ -1,5 +1,6 @@
 import { db, queryClient } from "./client";
 import {
+  flowTemplates,
   knowledgeBases,
   memberships,
   models,
@@ -25,6 +26,7 @@ const UI_META: Record<
   Input: { color: "teal", icon: "form", shape: "rounded" },
   Breakpoint: { color: "red", icon: "stop", shape: "diamond" },
   Code: { color: "purple", icon: "code", shape: "rounded" },
+  Subflow: { color: "purple", icon: "nest", shape: "rounded" },
 };
 
 const NODE_CATEGORIES: Record<string, string> = {
@@ -39,6 +41,7 @@ const NODE_CATEGORIES: Record<string, string> = {
   Input: "control",
   Breakpoint: "debug",
   Code: "integration",
+  Subflow: "control",
 };
 
 const NODE_TYPES = [
@@ -53,6 +56,7 @@ const NODE_TYPES = [
   "Input",
   "Breakpoint",
   "Code",
+  "Subflow",
 ] as const;
 
 const NODE_MIN_ROLE: Record<(typeof NODE_TYPES)[number], string> = {
@@ -67,6 +71,7 @@ const NODE_MIN_ROLE: Record<(typeof NODE_TYPES)[number], string> = {
   Input: "builder",
   Breakpoint: "developer",
   Code: "developer",
+  Subflow: "builder",
 };
 
 const SEED_USERS = [
@@ -82,6 +87,13 @@ function configSchemaFor(typeKey: string): Record<string, unknown> {
       type: "object",
       required: ["url"],
       properties: { url: { type: "string" } },
+    };
+  }
+  if (typeKey === "Subflow") {
+    return {
+      type: "object",
+      required: ["flow_version_id"],
+      properties: { flow_version_id: { type: "string" } },
     };
   }
   return { type: "object", properties: {} };
@@ -225,8 +237,45 @@ async function seed() {
       },
     });
 
+
+  const demoTemplateGraph = {
+    id: "tpl_demo_basic_graph",
+    state_schema: { type: "object", properties: {} },
+    nodes: [
+      { id: "s", type: "Start", config: {}, ui: { x: 0, y: 0 } },
+      { id: "t", type: "Transform", config: { set: { hello: "template" } }, ui: { x: 160, y: 0 } },
+      { id: "e", type: "End", config: {}, ui: { x: 320, y: 0 } },
+    ],
+    edges: [
+      { id: "e1", source: "s", sourceHandle: "out", target: "t", targetHandle: "in", kind: "default", label: "" },
+      { id: "e2", source: "t", sourceHandle: "out", target: "e", targetHandle: "in", kind: "default", label: "" },
+    ],
+  };
+
+  await db
+    .insert(flowTemplates)
+    .values({
+      id: "tpl_demo_basic",
+      workspaceId: "ws_demo",
+      name: "Demo Basic",
+      description: "Start → Transform → End sample template",
+      graphJson: demoTemplateGraph,
+      sourceFlowVersionId: null,
+      createdBy: "u_dev",
+    })
+    .onConflictDoUpdate({
+      target: flowTemplates.id,
+      set: {
+        name: "Demo Basic",
+        description: "Start → Transform → End sample template",
+        graphJson: demoTemplateGraph,
+        workspaceId: "ws_demo",
+        createdBy: "u_dev",
+      },
+    });
+
   console.log(
-    "seed complete: u_admin|u_dev|u_builder|u_viewer, ws_demo, p_demo, node_defs + tool_demo_echo|model_demo_stub|kb_demo",
+    "seed complete: u_admin|u_dev|u_builder|u_viewer, ws_demo, p_demo, node_defs + Subflow + tpl_demo_basic + assets",
   );
 }
 

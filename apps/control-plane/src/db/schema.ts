@@ -178,3 +178,19 @@ export const knowledgeBases = pgTable(
   },
   (t) => [unique("knowledge_bases_workspace_name").on(t.workspaceId, t.name)],
 );
+
+/** M5: workspace flow templates (snapshot of published graph) */
+export const flowTemplates = pgTable(
+  "flow_templates",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    graphJson: jsonb("graph_json").notNull(),
+    sourceFlowVersionId: text("source_flow_version_id"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("flow_templates_workspace_name").on(t.workspaceId, t.name)],
+);

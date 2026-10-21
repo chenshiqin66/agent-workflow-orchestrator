@@ -27,6 +27,7 @@ describe("seed", () => {
       "Input",
       "LLM",
       "Start",
+      "Subflow",
       "Transform",
     ]);
     const transform = defs.find((d) => d.typeKey === "Transform");
