@@ -42,6 +42,54 @@ export type PublishResult = {
   schemaHash: string;
 };
 
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "cancel_requested";
+
+export type CreateTestRunResult = {
+  id: string;
+  status: RunStatus;
+  flowVersionId: string;
+};
+
+export type RunDetail = {
+  id: string;
+  flowVersionId: string;
+  trigger: string;
+  status: RunStatus;
+  inputJson: unknown;
+  outputJson: unknown;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  costTokens: number | null;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type RunEvent = {
+  id: string;
+  runId: string;
+  seq: number;
+  nodeId: string | null;
+  eventType: string;
+  payload: Record<string, unknown>;
+  ts: string;
+};
+
+export type ListRunEventsResult = {
+  events: RunEvent[];
+};
+
+export type CancelRunResult = {
+  id: string;
+  status: RunStatus;
+};
+
 export type NodeDef = {
   id: string;
   typeKey: string;
@@ -128,6 +176,27 @@ export function createApiClient(options: ApiClientOptions = {}) {
     },
     listNodeDefs() {
       return request<NodeDef[]>(`/node-defs`);
+    },
+    createTestRun(flowId: string, input: unknown) {
+      return request<CreateTestRunResult>(`/flows/${flowId}/test-runs`, {
+        method: "POST",
+        body: JSON.stringify({ input }),
+      });
+    },
+    getRun(runId: string) {
+      return request<RunDetail>(`/runs/${runId}`);
+    },
+    listRunEvents(runId: string, afterSeq?: number) {
+      const q =
+        afterSeq !== undefined && afterSeq > 0
+          ? `?after_seq=${encodeURIComponent(String(afterSeq))}`
+          : "";
+      return request<ListRunEventsResult>(`/runs/${runId}/events${q}`);
+    },
+    cancelRun(runId: string) {
+      return request<CancelRunResult>(`/runs/${runId}/cancel`, {
+        method: "POST",
+      });
     },
   };
 }

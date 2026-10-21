@@ -9,6 +9,8 @@ const VARIANT_CLASS: Record<string, string> = {
   Tool: "awo-node--blue",
   HumanApproval: "awo-node--orange",
   Input: "awo-node--orange",
+  Transform: "awo-node--blue",
+  Emit: "awo-node--blue",
 };
 
 function iconFor(type: string): string {
@@ -23,6 +25,10 @@ function iconFor(type: string): string {
       return "💡";
     case "HumanApproval":
       return "🎧";
+    case "Transform":
+      return "🔧";
+    case "Emit":
+      return "📣";
     default:
       return "●";
   }

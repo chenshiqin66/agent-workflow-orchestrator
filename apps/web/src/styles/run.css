@@ -1,0 +1,249 @@
+.awo-app__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.awo-app__canvas {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.awo-run-panel {
+  width: 340px;
+  max-width: 40vw;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-left: 1px solid rgba(59, 130, 246, 0.18);
+  background: rgba(255, 255, 255, 0.85);
+  overflow: auto;
+}
+
+.awo-run-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.awo-run-panel__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.awo-run-panel__hint {
+  font-size: 11px;
+  color: #f97316;
+  font-weight: 600;
+}
+
+.awo-run-panel__subtitle {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e3a5f;
+}
+
+.awo-run-panel__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.awo-run-panel__input {
+  width: 100%;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 8px;
+  background: #fff;
+  color: #1e3a5f;
+}
+
+.awo-run-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.awo-run-panel__primary,
+.awo-run-panel__secondary {
+  appearance: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.awo-run-panel__primary {
+  border: 1px solid #2563eb;
+  background: #3b82f6;
+  color: #fff;
+}
+
+.awo-run-panel__primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.awo-run-panel__primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.awo-run-panel__secondary {
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: #fff;
+  color: #b91c1c;
+}
+
+.awo-run-panel__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.awo-run-panel__run-id {
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #475569;
+}
+
+.awo-run-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.awo-run-badge--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.awo-run-badge--err {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.awo-run-badge--active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.awo-run-panel__error {
+  font-size: 12px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.awo-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.awo-timeline--empty {
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 8px 0;
+}
+
+.awo-timeline__row {
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 6px 8px;
+}
+
+.awo-timeline__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.awo-timeline__seq {
+  font-weight: 700;
+  color: #64748b;
+}
+
+.awo-timeline__time {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.awo-timeline__type {
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.awo-timeline__type--node_failed,
+.awo-timeline__type--run_finished {
+  /* keep default; failed tint below */
+}
+
+.awo-timeline__type--node_failed {
+  color: #b91c1c;
+}
+
+.awo-timeline__node {
+  color: #334155;
+}
+
+.awo-timeline__dur {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.awo-timeline__toggle {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: #fff;
+  color: #1e40af;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.awo-timeline__payload {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.35;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+}

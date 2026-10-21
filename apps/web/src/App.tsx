@@ -4,6 +4,8 @@ import { FlowCanvas } from "./canvas/FlowCanvas";
 import { api } from "./api/client";
 import { saveThenPublish } from "./api/save-then-publish";
 import { SAMPLE_GRAPH } from "./sample-graph";
+import { SAMPLE_M2_GRAPH } from "./sample-m2-graph";
+import { TestRunPanel } from "./run/TestRunPanel";
 
 const PROJECT_ID = "p_demo";
 const FLOW_ID_KEY = "awo.demoFlowId";
@@ -19,6 +21,10 @@ function emptyGraph(id: string): FlowGraph {
 
 function withSampleContent(id: string): FlowGraph {
   return { ...SAMPLE_GRAPH, id };
+}
+
+function withM2Sample(id: string): FlowGraph {
+  return { ...SAMPLE_M2_GRAPH, id };
 }
 
 export function App() {
@@ -49,7 +55,6 @@ export function App() {
         detail.graph && Array.isArray(detail.graph.nodes)
           ? (detail.graph as FlowGraph)
           : emptyGraph(detail.draft?.schemaHash ? detail.id : detail.id);
-      // Prefer server graph id when present
       const normalized: FlowGraph = {
         ...g,
         id: typeof g.id === "string" && g.id.length > 0 ? g.id : detail.id,
@@ -109,6 +114,17 @@ export function App() {
     }
   };
 
+  const onLoadM2Sample = () => {
+    const id = flowId ?? "local";
+    setGraph(withM2Sample(id));
+    setGraphEpoch((n) => n + 1);
+    setStatus(
+      flowId
+        ? "已载入 M2 可执行样例（请保存并发布后试运行）"
+        : "已载入 M2 可执行样例（请先新建流程再保存发布）",
+    );
+  };
+
   const onSave = async () => {
     if (!flowId) {
       setStatus("请先创建或打开流程");
@@ -137,8 +153,6 @@ export function App() {
     setBusy(true);
     setStatus("保存草稿并发布…");
     try {
-      // Always persist the in-memory canvas before publish so we never
-      // publish a stale server draft after unsaved edits.
       const { saved, published } = await saveThenPublish(api, flowId, graph);
       setDraftHash(saved.schemaHash);
       setPublishedVersionId(published.versionId);
@@ -202,6 +216,9 @@ export function App() {
           <button type="button" disabled={busy} onClick={() => void onCreate()}>
             新建演示流程
           </button>
+          <button type="button" disabled={busy} onClick={onLoadM2Sample}>
+            载入 M2 样例
+          </button>
           <button type="button" disabled={busy || !flowId} onClick={() => void onReload()}>
             重新加载
           </button>
@@ -220,11 +237,22 @@ export function App() {
           {status}
         </div>
       </header>
-      <FlowCanvas
-        graph={graph}
-        graphEpoch={graphEpoch}
-        onGraphChange={setGraph}
-      />
+      <div className="awo-app__body">
+        <div className="awo-app__canvas">
+          <FlowCanvas
+            graph={graph}
+            graphEpoch={graphEpoch}
+            onGraphChange={setGraph}
+          />
+        </div>
+        <TestRunPanel
+          flowId={flowId}
+          publishedVersionId={publishedVersionId}
+          graph={graph}
+          busy={busy}
+          onStatus={setStatus}
+        />
+      </div>
     </div>
   );
 }
