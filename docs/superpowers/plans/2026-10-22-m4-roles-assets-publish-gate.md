@@ -1,48 +1,48 @@
-# M4 Roles + Asset Registry + Publish Gate Implementation Plan
+# M4 角色 + 资产注册表 + 发布门禁 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：** 必用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，按任务逐步实现本计划。步骤用复选框（`- [ ]`）跟踪。
 
-**Goal:** Enforce workspace roles for node visibility and mutating APIs; add minimal tools/models/knowledge_bases registry CRUD; block publish unless required config and a successful matching test-run pass (with first-publish bootstrap).
+**目标：** 用工作区角色约束节点可见性与写接口；增加最小的 tools/models/knowledge_bases 注册表 CRUD；发布前必须满足必填配置与匹配的成功试跑（首次发布有 bootstrap 例外）。
 
-**Architecture:** Keep stub `X-User-Id` → `memberships.role`. Introduce `roleAtLeast` rank helper; filter `GET /node-defs` by `min_role`; gate `publishFlow` with structured checks; relax test-run to allow `graph_source: "draft"` for developer+. New Drizzle tables + `/assets/*` routes. Web: user switcher, server-filtered palette, thin assets panel, publish gate error display. No OIDC, no secrets vault, no multi-approver workflow.
+**架构：** 保留桩鉴权 `X-User-Id` → `memberships.role`。引入 `roleAtLeast` 等级辅助；按 `min_role` 过滤 `GET /node-defs`；用结构化检查门禁 `publishFlow`；放宽试跑允许 developer+ 使用 `graph_source: "draft"`。新增 Drizzle 表与 `/assets/*` 路由。Web：用户切换器、服务端过滤的节点面板、轻量资产面板、发布门禁错误展示。无 OIDC、无密钥保险库、无多人审批流。
 
-**Tech Stack:** Existing M1–M3 stack — TypeScript, pnpm, Hono, Drizzle, PostgreSQL, Vite, React, XYFlow, Vitest, Zod. Paths use `apps/control-plane` (not `apps/api`).
+**技术栈：** 沿用 M1–M3 技术栈 — TypeScript、pnpm、Hono、Drizzle、PostgreSQL、Vite、React、XYFlow、Vitest、Zod。路径使用 `apps/control-plane`（不是 `apps/api`）。
 
-**Spec:** `docs/superpowers/specs/2026-10-22-m4-roles-assets-publish-gate-design.md`
+**规格：** `docs/superpowers/specs/2026-10-22-m4-roles-assets-publish-gate-design.md`
 
-## Global Constraints
+## 全局约束
 
-- Product: 编排画布 + 运行时调试 — M4 ships **roles + assets + publish gate**; subflow/templates/metrics are M5
-- Auth: stub `X-User-Id` only; executor callbacks `X-Executor-Token` unchanged
-- Roles exact: `admin | developer | builder | viewer` with ranks 3/2/1/0
-- Graph is language-agnostic JSON; secrets never inside `graph_json` (asset `config_json` may hold opaque `secret_ref` strings only — no vault)
-- Do not change M1 publish immutability (new published row; draft untouched)
-- Do not change M3 pause/signal/checkpoint behavior
-- Default test-run remains **published**; draft test-run is developer+/admin only
-- Publish gate bootstrap: skip `successful_test_run` when `publishedVersionId` is null
-- Migration name exact: `0004_m4_roles_assets_gate`
-- No OIDC; no multi-approver publish; no `credentials` table in M4
+- 产品：编排画布 + 运行时调试 — M4 交付 **角色 + 资产 + 发布门禁**；子流程/模板/指标在 M5
+- 鉴权：仅桩 `X-User-Id`；执行器回调 `X-Executor-Token` 不变
+- 角色精确为：`admin | developer | builder | viewer`，等级 3/2/1/0
+- 图是语言无关 JSON；密钥不得出现在 `graph_json`（资产 `config_json` 可仅含不透明 `secret_ref` 字符串 — 无保险库）
+- 不要改动 M1 发布不可变（新发布行；草稿不动）
+- 不要改动 M3 暂停/信号/checkpoint 行为
+- 默认试跑仍是 **published**；草稿试跑仅 developer+/admin
+- 发布门禁 bootstrap：当 `publishedVersionId` 为 null 时跳过 `successful_test_run`
+- 迁移名必须精确：`0004_m4_roles_assets_gate`
+- 无 OIDC；无多人审批发布；M4 无 `credentials` 表
 
-**Follow-up plans (do not implement in this plan):** M5 subflow/templates/metrics; OIDC; secrets vault; WS push.
+**后续计划（本计划不要实现）：** M5 子流程/模板/指标；OIDC；密钥保险库；WS 推送。
 
 ---
 
-## Key architecture decisions (locked for M4)
+## 关键架构决策（M4 已锁定）
 
-| Decision | Choice | Rationale |
+| 决策 | 选择 | 理由 |
 |---|---|---|
-| Auth | Keep `X-User-Id` + memberships | Spec YAGNI; matches M1–M3 |
-| Role check helper | `roleAtLeast(role, min)` via numeric rank | One function for routes + node filter + gate |
-| Node visibility | Server-side filter on `GET /node-defs` | Builders never see Code ids |
-| Draft test-run | `graph_source: "draft"` on create run; developer+ | Solves publish-gate chicken-and-egg without fake publish |
-| Gate failure shape | `400` `{ error: "publish_gate_failed", checks: [...] }` | Web can render per-check |
-| Assets | Three tables; no credentials | Parent E-R subset; no vault |
-| Tool list ACL | `allowed_roles` jsonb string[]; empty/missing = all roles | Minimal authorization |
-| Code node | Seed `node_defs` only; executor may still stub/fail | Visibility/governance first |
+| 鉴权 | 保留 `X-User-Id` + memberships | 规格 YAGNI；与 M1–M3 一致 |
+| 角色检查辅助 | 经数值等级的 `roleAtLeast(role, min)` | 路由 + 节点过滤 + 门禁共用一个函数 |
+| 节点可见性 | 在 `GET /node-defs` 做服务端过滤 | builder 看不到 Code id |
+| 草稿试跑 | 创建 run 时 `graph_source: "draft"`；developer+ | 解决发布门禁鸡生蛋问题，无需假发布 |
+| 门禁失败形态 | `400` `{ error: "publish_gate_failed", checks: [...] }` | Web 可按检查项渲染 |
+| 资产 | 三张表；无 credentials | 父规格 E-R 子集；无保险库 |
+| 工具列表 ACL | `allowed_roles` jsonb 字符串数组；空/缺省 = 全部角色 | 最小授权 |
+| Code 节点 | 仅种子 `node_defs`；执行器仍可桩/失败 | 先做可见性/治理 |
 
 ---
 
-## File map (create / modify in M4)
+## 文件地图（M4 创建/修改）
 
 ```
 agent-workflow-orchestrator/
@@ -82,18 +82,18 @@ agent-workflow-orchestrator/
 
 ---
 
-### Task 1: Role helpers + seed multi-user + filter node-defs
+### 任务 1：角色辅助 + 多种子用户 + 过滤 node-defs
 
-**Files:**
-- Create: `apps/control-plane/src/auth/roles.ts`
-- Create: `apps/control-plane/src/auth/roles.test.ts`
-- Modify: `apps/control-plane/src/db/seed.ts`
-- Modify: `apps/control-plane/src/services/flow-service.ts` (`listNodeDefs`)
-- Modify: `apps/control-plane/src/routes/flows.ts`
-- Test: `apps/control-plane/tests/roles-node-defs.test.ts`
+**文件：**
+- 创建：`apps/control-plane/src/auth/roles.ts`
+- 创建：`apps/control-plane/src/auth/roles.test.ts`
+- 修改：`apps/control-plane/src/db/seed.ts`
+- 修改：`apps/control-plane/src/services/flow-service.ts` (`listNodeDefs`)
+- 修改：`apps/control-plane/src/routes/flows.ts`
+- 测试：`apps/control-plane/tests/roles-node-defs.test.ts`
 
-**Interfaces:**
-- Consumes: `memberships.role`, `nodeDefs.minRole`, existing `authMiddleware` variables
+**接口：**
+- 消费：`memberships.role`、`nodeDefs.minRole`、现有 `authMiddleware` 变量
 - Produces:
   ```ts
   export const ROLES = ["viewer", "builder", "developer", "admin"] as const;
@@ -107,7 +107,7 @@ agent-workflow-orchestrator/
   export async function listNodeDefs(workspaceId: string, role: string): Promise<NodeDefRow[]>;
   ```
 
-- [ ] **Step 1: Write failing unit tests for roles**
+- [ ] **步骤 1：为 roles 编写会失败的单元测试**
 
 ```ts
 // apps/control-plane/src/auth/roles.test.ts
@@ -130,12 +130,12 @@ describe("roleAtLeast", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests — expect FAIL (module missing)**
+- [ ] **步骤 2：跑测试 — 预期失败（模块缺失）**
 
 Run: `pnpm --filter @awo/control-plane exec vitest run src/auth/roles.test.ts`
-Expected: FAIL cannot find module or parseRole undefined
+预期：失败（找不到模块或 parseRole 未定义）
 
-- [ ] **Step 3: Implement `roles.ts`**
+- [ ] **步骤 3：实现 `roles.ts`**
 
 ```ts
 export const ROLES = ["viewer", "builder", "developer", "admin"] as const;
@@ -167,17 +167,17 @@ export function requireRole(role: string, minRole: string): void {
 }
 ```
 
-- [ ] **Step 4: Re-run roles unit tests — PASS**
+- [ ] **步骤 4：重跑 roles 单元测试 — 通过**
 
-- [ ] **Step 5: Update seed — users + Code + min_role**
+- [ ] **步骤 5：更新种子 — 用户 + Code + min_role**
 
 In `seed.ts`:
-- Upsert users/memberships: `u_admin`/`admin`, `u_dev`/`developer`, `u_builder`/`builder`, `u_viewer`/`viewer`
+- Upsert 用户/membership：`u_admin`/`admin`、`u_dev`/`developer`、`u_builder`/`builder`、`u_viewer`/`viewer`
 - Add `Code` to `NODE_TYPES` with `UI_META` / category `integration` (or `agent`)
 - Per-type `min_role`: default `builder`; `Code` and `Breakpoint` → `developer`
 - For `HTTP`, set `configSchema: { type: "object", required: ["url"], properties: { url: { type: "string" } } }`
 
-- [ ] **Step 6: Filter `listNodeDefs(workspaceId, role)`**
+- [ ] **步骤 6：Filter `listNodeDefs(workspaceId, role)`**
 
 ```ts
 export async function listNodeDefs(workspaceId: string, role: string) {
@@ -188,7 +188,7 @@ export async function listNodeDefs(workspaceId: string, role: string) {
 
 Route: `listNodeDefs(c.get("workspaceId"), c.get("role"))`.
 
-- [ ] **Step 7: HTTP test builder vs developer node-defs**
+- [ ] **步骤 7：HTTP 测试 builder vs developer 的 node-defs**
 
 ```ts
 // apps/control-plane/tests/roles-node-defs.test.ts
@@ -208,9 +208,9 @@ it("builder omits Code; developer includes Code", async () => {
 });
 ```
 
-Requires DB seed applied in test setup (same pattern as `flows.test.ts`).
+测试 setup 需已应用 DB 种子（与 `flows.test.ts` 相同模式）。
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
 ```bash
 git add apps/control-plane/src/auth apps/control-plane/src/db/seed.ts \
@@ -221,19 +221,19 @@ git commit -m "feat(m4): role ranks, multi-user seed, filter node-defs by min_ro
 
 ---
 
-### Task 2: Asset tables migration + asset-service CRUD
+### 任务 2：资产表迁移 + asset-service CRUD
 
-**Files:**
-- Modify: `apps/control-plane/src/db/schema.ts`
-- Create: `apps/control-plane/drizzle/0004_m4_roles_assets_gate.sql`
-- Create: `apps/control-plane/src/services/asset-service.ts`
-- Modify: `apps/control-plane/src/db/seed.ts` (sample assets)
-- Create: `apps/control-plane/src/routes/assets.ts`
-- Modify: `apps/control-plane/src/index.ts`
-- Test: `apps/control-plane/tests/assets.test.ts`
+**文件：**
+- 修改：`apps/control-plane/src/db/schema.ts`
+- 创建：`apps/control-plane/drizzle/0004_m4_roles_assets_gate.sql`
+- 创建：`apps/control-plane/src/services/asset-service.ts`
+- 修改：`apps/control-plane/src/db/seed.ts`（样例资产）
+- 创建：`apps/control-plane/src/routes/assets.ts`
+- 修改：`apps/control-plane/src/index.ts`
+- 测试：`apps/control-plane/tests/assets.test.ts`
 
-**Interfaces:**
-- Consumes: `requireRole`, `workspaceId`, Drizzle `db`
+**接口：**
+- 消费：`requireRole`, `workspaceId`, Drizzle `db`
 - Produces:
   ```ts
   // schema tables: tools, models, knowledgeBases
@@ -245,7 +245,7 @@ git commit -m "feat(m4): role ranks, multi-user seed, filter node-defs by min_ro
   // same for models / knowledgeBases (models/KBs: no allowed_roles; write developer+)
   ```
 
-- [ ] **Step 1: Write failing assets route test**
+- [ ] **步骤 1：编写会失败的 assets 路由测试**
 
 ```ts
 it("developer can create and list a tool; builder cannot create", async () => {
@@ -276,11 +276,11 @@ it("developer can create and list a tool; builder cannot create", async () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL (404 route or table missing)**
+- [ ] **步骤 2：运行 — 预期失败（404 路由或表缺失）**
 
 Run: `pnpm --filter @awo/control-plane exec vitest run tests/assets.test.ts`
 
-- [ ] **Step 3: Add schema + SQL migration**
+- [ ] **步骤 3：添加 schema + SQL 迁移**
 
 ```ts
 export const tools = pgTable("tools", {
@@ -314,19 +314,19 @@ export const knowledgeBases = pgTable("knowledge_bases", {
 }, (t) => [unique("knowledge_bases_workspace_name").on(t.workspaceId, t.name)]);
 ```
 
-SQL file `0004_m4_roles_assets_gate.sql` must create the three tables + uniques. Register schema in `db/client` relations if used.
+SQL 文件 `0004_m4_roles_assets_gate.sql` 必须创建三张表及唯一约束。若使用 relations，在 `db/client` 注册 schema。
 
-- [ ] **Step 4: Implement `asset-service.ts` + `routes/assets.ts`**
+- [ ] **步骤 4：实现 `asset-service.ts` + `routes/assets.ts`**
 
-- POST/PATCH validate with Zod; `requireRole(role, "developer")` on writes
-- `listTools`: `requireRole` not needed beyond auth; filter `allowedRoles` with `roleAtLeast` membership in array (caller role string ∈ allowed_roles OR allowed_roles empty)
-- Mount `app.route("/", assetsRoutes)` in `index.ts` after auth
+- POST/PATCH 用 Zod 校验；写操作 `requireRole(role, "developer")`
+- `listTools`：鉴权之外无需 `requireRole`；用调用方角色是否 ∈ allowed_roles（或 allowed_roles 为空）过滤
+- 在 `index.ts` 鉴权之后挂载 `app.route("/", assetsRoutes)`
 
-- [ ] **Step 5: Seed demo assets** (`tool_demo_echo`, `model_demo_stub`, `kb_demo`)
+- [ ] **步骤 5：种子演示资产**（`tool_demo_echo`、`model_demo_stub`、`kb_demo`）
 
-- [ ] **Step 6: Run assets tests — PASS; apply migration in test setup**
+- [ ] **步骤 6：跑 assets 测试 — 通过；测试 setup 中应用迁移**
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```bash
 git add apps/control-plane/src/db apps/control-plane/drizzle/0004_m4_roles_assets_gate.sql \
@@ -337,16 +337,16 @@ git commit -m "feat(m4): tools/models/knowledge_bases registry CRUD"
 
 ---
 
-### Task 3: Mutating API role guards + draft test-run
+### 任务 3：写接口角色守卫 + 草稿试跑
 
-**Files:**
-- Modify: `apps/control-plane/src/services/flow-service.ts` (`createFlow`, `saveDraft`, `publishFlow` entry — role param)
-- Modify: `apps/control-plane/src/services/run-service.ts`
-- Modify: `apps/control-plane/src/routes/flow-versions.ts`, `routes/flows.ts`, `routes/runs.ts`
-- Test: extend `apps/control-plane/tests/flows.test.ts` + `tests/runs.test.ts`
+**文件：**
+- 修改：`apps/control-plane/src/services/flow-service.ts`（`createFlow`、`saveDraft`、`publishFlow` 入口 — role 参数）
+- 修改：`apps/control-plane/src/services/run-service.ts`
+- 修改：`apps/control-plane/src/routes/flow-versions.ts`, `routes/flows.ts`, `routes/runs.ts`
+- 测试：extend `apps/control-plane/tests/flows.test.ts` + `tests/runs.test.ts`
 
-**Interfaces:**
-- Consumes: `requireRole`, draft/published versions
+**接口：**
+- 消费：`requireRole`、草稿/已发布版本
 - Produces:
   ```ts
   createFlow(..., role: string)  // requireRole(role, "builder")
@@ -354,7 +354,7 @@ git commit -m "feat(m4): tools/models/knowledge_bases registry CRUD"
   // createTestRun(flowId, input, userId, workspaceId, role, graphSource: "published" | "draft")
   ```
 
-- [ ] **Step 1: Failing tests**
+- [ ] **步骤 1：会失败的测试**
 
 ```ts
 it("viewer cannot save draft", async () => {
@@ -383,12 +383,12 @@ it("developer can create draft test-run; builder cannot", async () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL (viewer still 200 / draft source ignored)**
+- [ ] **步骤 2：运行 — 预期失败（viewer 仍 200 / draft source 被忽略）**
 
-- [ ] **Step 3: Implement guards**
+- [ ] **步骤 3：实现守卫**
 
 - At start of `createFlow` / `saveDraft`: `requireRole(role, "builder")`
-- `publishFlow(..., role)`: `requireRole(role, "builder")` (gate itself in Task 4)
+- `publishFlow(..., role)`：`requireRole(role, "builder")`（门禁本身在任务 4）
 - In `createTestRun`:
   ```ts
   requireRole(role, "builder");
@@ -400,13 +400,13 @@ it("developer can create draft test-run; builder cannot", async () => {
     // existing published path
   }
   ```
-- Pass `c.get("role")` from routes; parse `graph_source` from body
+- 从路由传 `c.get("role")`；从 body 解析 `graph_source`
 
-- [ ] **Step 4: Signal/cancel/breakpoints routes: `requireRole(role, "builder")`**
+- [ ] **步骤 4：signal/cancel/breakpoints 路由：`requireRole(role, "builder")`**
 
-- [ ] **Step 5: Tests PASS**
+- [ ] **步骤 5：测试通过**
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git commit -m "feat(m4): enforce role guards and developer draft test-runs"
@@ -414,17 +414,17 @@ git commit -m "feat(m4): enforce role guards and developer draft test-runs"
 
 ---
 
-### Task 4: Publish gate service + wire into publishFlow
+### 任务 4：发布门禁服务 + 接入 publishFlow
 
-**Files:**
-- Create: `apps/control-plane/src/services/publish-gate.ts`
-- Create: `apps/control-plane/src/services/publish-gate.test.ts` (unit with mocks or DB)
-- Modify: `apps/control-plane/src/services/flow-service.ts` (`publishFlow`)
-- Modify: `apps/control-plane/src/routes/flow-versions.ts` (map gate error body)
-- Test: `apps/control-plane/tests/publish-gate.test.ts`
+**文件：**
+- 创建：`apps/control-plane/src/services/publish-gate.ts`
+- 创建：`apps/control-plane/src/services/publish-gate.test.ts` (unit with mocks or DB)
+- 修改：`apps/control-plane/src/services/flow-service.ts` (`publishFlow`)
+- 修改：`apps/control-plane/src/routes/flow-versions.ts` (map gate error body)
+- 测试：`apps/control-plane/tests/publish-gate.test.ts`
 
-**Interfaces:**
-- Consumes: draft graph, `hashGraph`, `nodeDefs`, assets tables, `runs`+`flowVersions`, publisher `role`
+**接口：**
+- 消费：草稿图、`hashGraph`、`nodeDefs`、资产表、`runs`+`flowVersions`、发布者 `role`
 - Produces:
   ```ts
   export type GateCheck = { id: string; ok: boolean; message?: string };
@@ -443,7 +443,7 @@ git commit -m "feat(m4): enforce role guards and developer draft test-runs"
   // (err as any).body = { error: "publish_gate_failed", checks }
   ```
 
-- [ ] **Step 1: Write failing gate unit tests**
+- [ ] **步骤 1：编写会失败的门禁单元测试**
 
 ```ts
 describe("evaluatePublishGate", () => {
@@ -482,9 +482,9 @@ describe("evaluatePublishGate", () => {
 });
 ```
 
-- [ ] **Step 2: Run — FAIL module missing**
+- [ ] **步骤 2：运行 — 失败（模块缺失）**
 
-- [ ] **Step 3: Implement `evaluatePublishGate`**
+- [ ] **步骤 3：实现 `evaluatePublishGate`**
 
 Pseudo-logic:
 
@@ -535,9 +535,9 @@ checks.push({ id: "role_nodes", ok: roleProblems.length === 0, message: roleProb
 return { ok: checks.every((c) => c.ok), checks };
 ```
 
-- [ ] **Step 4: Wire `publishFlow`**
+- [ ] **步骤 4：接入 `publishFlow`**
 
-Before inserting published version:
+插入已发布版本之前：
 
 ```ts
 const schemaHash = hashGraph(graphWithIdCandidate); // or hash draft graph same as save
@@ -559,9 +559,9 @@ catch (e) {
 }
 ```
 
-- [ ] **Step 5: HTTP test — missing url → 400 with checks; bootstrap Start/End → 200**
+- [ ] **步骤 5：HTTP 测试 — 缺 url → 400 带 checks；bootstrap Start/End → 200**
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git commit -m "feat(m4): publish gate required_config, test-run, role_nodes"
@@ -569,17 +569,17 @@ git commit -m "feat(m4): publish gate required_config, test-run, role_nodes"
 
 ---
 
-### Task 5: M4 integration test + `test:m4` script
+### 任务 5：M4 集成测试 + `test:m4` 脚本
 
-**Files:**
-- Create: `apps/control-plane/tests/m4-integration.test.ts`
-- Modify: root `package.json` (`test:m4`)
+**文件：**
+- 创建：`apps/control-plane/tests/m4-integration.test.ts`
+- 修改：root `package.json` (`test:m4`)
 
-**Interfaces:**
-- Consumes: live app + DB + (optional) executor for draft test-run success path
-- Produces: green `pnpm test:m4`
+**接口：**
+- 消费：真实 app + DB +（可选）执行器用于草稿试跑成功路径
+- 产出：green `pnpm test:m4`
 
-- [ ] **Step 1: Write integration scenarios**
+- [ ] **步骤 1：编写集成场景**
 
 ```ts
 describe("m4 integration", () => {
@@ -599,17 +599,17 @@ describe("m4 integration", () => {
 });
 ```
 
-For step 4 without flaking: prefer **calling real createTestRun + executor** like `m3-integration` when `EXECUTOR_URL` up; else allow test helper `insertSucceededRunForHash` only behind `process.env.M4_GATE_FIXTURE=1` — default path should use real executor when available (mirror `test:m3` env).
+步骤 4 避免不稳定：当 `EXECUTOR_URL` 可用时优先像 `m3-integration` 一样 **调用真实 createTestRun + 执行器**；否则仅在 `process.env.M4_GATE_FIXTURE=1` 下允许测试辅助 `insertSucceededRunForHash` — 默认路径在可用时用真实执行器（对齐 `test:m3` 环境）。
 
-- [ ] **Step 2: Add script**
+- [ ] **步骤 2：添加脚本**
 
 ```json
 "test:m4": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m4} pnpm --filter @awo/control-plane exec vitest run tests/m4-integration.test.ts"
 ```
 
-- [ ] **Step 3: Run `pnpm test:m4` — PASS; also smoke `pnpm test:m3` still PASS**
+- [ ] **步骤 3：运行 `pnpm test:m4` — 通过；并冒烟 `pnpm test:m3` 仍通过**
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git commit -m "test(m4): integration coverage for roles, assets, publish gate"
@@ -617,21 +617,21 @@ git commit -m "test(m4): integration coverage for roles, assets, publish gate"
 
 ---
 
-### Task 6: Web — user switcher, palette, assets panel, gate errors
+### 任务 6：Web — 用户切换器、节点面板、资产面板、门禁错误
 
-**Files:**
-- Modify: `apps/web/src/api/client.ts`, `apps/web/src/api/client.test.ts`
-- Create: `apps/web/src/auth/UserSwitcher.tsx`
-- Create: `apps/web/src/assets/AssetsPanel.tsx`
-- Create: `apps/web/src/canvas/NodePalette.tsx`
-- Modify: `apps/web/src/App.tsx`
-- Optional: `apps/web/src/styles/m4.css` imported from App
+**文件：**
+- 修改：`apps/web/src/api/client.ts`, `apps/web/src/api/client.test.ts`
+- 创建：`apps/web/src/auth/UserSwitcher.tsx`
+- 创建：`apps/web/src/assets/AssetsPanel.tsx`
+- 创建：`apps/web/src/canvas/NodePalette.tsx`
+- 修改：`apps/web/src/App.tsx`
+- 可选：从 App 导入 `apps/web/src/styles/m4.css`
 
-**Interfaces:**
-- Consumes: `listNodeDefs`, assets endpoints, publish error body
-- Produces: UI wired; `createRun(flowId, input, { graphSource?: "draft" | "published" })`
+**接口：**
+- 消费：`listNodeDefs`、assets 端点、发布错误 body
+- 产出：UI wired; `createRun(flowId, input, { graphSource?: "draft" | "published" })`
 
-- [ ] **Step 1: Failing client test for gate error parsing / assets list**
+- [ ] **步骤 1：门禁错误解析 / 资产列表的会失败客户端测试**
 
 ```ts
 it("publish throws with checks when gate fails", async () => {
@@ -651,9 +651,9 @@ it("publish throws with checks when gate fails", async () => {
 });
 ```
 
-Ensure `request()` attaches `status` + parsed `body` on errors (extend if needed).
+确保 `request()` 在错误时附带 `status` + 解析后的 `body`（按需扩展）。
 
-- [ ] **Step 2: Implement client methods**
+- [ ] **步骤 2：实现客户端方法**
 
 ```ts
 listTools(): Promise<Tool[]>
@@ -663,17 +663,17 @@ deleteTool(id): Promise<void>
 createRun(flowId, input, opts?: { graphSource?: "draft" | "published" })
 ```
 
-- [ ] **Step 3: UserSwitcher** — select `u_dev|u_builder|u_viewer|u_admin`; persist to `localStorage`; reload client
+- [ ] **步骤 3：UserSwitcher** — 选择 `u_dev|u_builder|u_viewer|u_admin`；持久化到 `localStorage`；重载 client
 
-- [ ] **Step 4: NodePalette** — `useEffect` load defs; buttons drag/add by `typeKey` (integrate with existing canvas add API in App/FlowCanvas; if canvas only loads samples today, at minimum show filtered list and disable unknown adds)
+- [ ] **步骤 4：NodePalette** — `useEffect` 加载 defs；按 `typeKey` 拖拽/添加（接入 App/FlowCanvas 现有添加 API；若画布目前只加载样例，至少显示过滤列表并禁用未知添加）
 
-- [ ] **Step 5: AssetsPanel** — tables + create name form for developer role (detect via optional `GET` that returns 403 on write probe, or pass role from switcher map)
+- [ ] **步骤 5：AssetsPanel** — 表格 + developer 角色的创建名称表单（可用可选写探测 `GET` 返回 403 判断，或从切换器映射传 role）
 
-- [ ] **Step 6: App publish handler** — on failure show `checks.map(c => c.message).join("; ")`
+- [ ] **步骤 6：App 发布处理** — 失败时显示 `checks.map(c => c.message).join("; ")`
 
-- [ ] **Step 7: Run web vitest — PASS**
+- [ ] **步骤 7：跑 web vitest — 通过**
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
 ```bash
 git commit -m "feat(m4): web user switcher, palette filter, assets panel, gate errors"
@@ -681,20 +681,20 @@ git commit -m "feat(m4): web user switcher, palette filter, assets panel, gate e
 
 ---
 
-### Task 7: Docs + design status links
+### 任务 7：文档 + 设计状态链接
 
-**Files:**
-- Modify: `README.md`
-- Modify: `docs/superpowers/specs/2026-10-22-m4-roles-assets-publish-gate-design.md` (Status → approved)
-- Modify: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (Status line += M4 paths)
+**文件：**
+- 修改：`README.md`
+- 修改：`docs/superpowers/specs/2026-10-22-m4-roles-assets-publish-gate-design.md`（Status → approved）
+- 修改：`docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`（Status 行 += M4 路径）
 
-- [ ] **Step 1: README M4 section**
+- [ ] **步骤 1：README M4 节**
 
-Document: roles, seeded users, assets endpoints, publish gate checks, draft test-run, `pnpm test:m4`.
+文档说明：角色、种子用户、assets 端点、发布门禁检查、草稿试跑、`pnpm test:m4`。
 
-- [ ] **Step 2: Flip M4 design status to approved; ensure parent Status links design+plan**
+- [ ] **步骤 2：把 M4 设计状态改为 approved；确保父规格 Status 链到 design+plan**
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git commit -m "docs: M4 README acceptance and design status links"
@@ -702,22 +702,22 @@ git commit -m "docs: M4 README acceptance and design status links"
 
 ---
 
-## Self-review (plan vs design)
+## 自检（计划 vs 设计）
 
-| Spec section | Task coverage |
+| 规格章节 | 任务覆盖 |
 |---|---|
-| §3 Roles / rank / capabilities | Task 1 (helper+filter+seed), Task 3 (mutate guards) |
-| §3.3 Code/Breakpoint min_role | Task 1 seed |
-| §3.4 Seed users | Task 1 |
-| §4 Asset tables + APIs | Task 2 |
-| §4.3 Seed samples | Task 2 |
-| §5 Publish gate checks | Task 4 |
-| §5.3 Draft test-run | Task 3 |
-| §6 Enforcement points | Tasks 1–4 |
+| §3 角色 / 等级 / 能力 | 任务 1（helper+filter+seed）、任务 3（写守卫） |
+| §3.3 Code/Breakpoint min_role | 任务 1 种子 |
+| §3.4 种子用户 | 任务 1 |
+| §4 资产表 + API | 任务 2 |
+| §4.3 种子样例 | 任务 2 |
+| §5 发布门禁检查 | 任务 4 |
+| §5.3 草稿试跑 | 任务 3 |
+| §6 强制点 | 任务 1–4 |
 | §7 Web UI | Task 6 |
 | §8 Migration `0004_…` + `test:m4` | Tasks 2, 5 |
-| §9 Acceptance | Task 5 integration |
-| YAGNI (no OIDC/vault/multi-approver) | Global Constraints; no tasks add them |
+| §9 验收 | 任务 5 集成 |
+| YAGNI（无 OIDC/保险库/多人审批） | 全局约束；无任务添加它们 |
 
-Placeholder scan: no TBD/TODO steps; commands and example tests inlined.
-Type consistency: `graph_source` / `GateCheck` / `requireRole` names aligned across tasks.
+占位符扫描：无 TBD/TODO 步骤；命令与示例测试已内联。
+类型一致性：`graph_source` / `GateCheck` / `requireRole` 名称跨任务对齐。

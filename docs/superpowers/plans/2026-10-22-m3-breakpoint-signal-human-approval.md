@@ -1,57 +1,57 @@
-# M3 Breakpoint / Signal / Human Approval Implementation Plan
+# M3 断点 / 信号 / 人工审批 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：** 必用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，按任务逐步实现本计划。步骤用复选框（`- [ ]`）跟踪。
 
-**Goal:** Deliver the debug/approval loop on top of M2: dynamic breakpoints and `Breakpoint` nodes pause a run; `HumanApproval` / `Input` wait for user signals; paused runs persist a checkpoint and resume via re-dispatch without holding an executor worker.
+**目标：** 在 M2 之上交付调试/审批闭环：动态断点与 `Breakpoint` 节点可暂停运行；`HumanApproval` / `Input` 等待用户信号；暂停的运行持久化 checkpoint，并通过重新派发恢复，不占用执行器 worker。
 
-**Architecture:** Checkpoint resume (stateless executor jobs). On pause the executor emits `breakpoint_hit` or `waiting_signal` (payload includes a `Checkpoint`), the control plane sets `runs.status=paused` and stores `checkpoint_json` / `pause_reason`, then the job ends. User `signal` / `PATCH state` / `PUT breakpoints` update the run; resume re-dispatches the same published graph with `checkpoint` (+ active `breakpoints`). Web keeps HTTP polling through `paused` and shows a SignalPanel. No WebSocket, no explicit step API, published-only test runs unchanged.
+**架构：** Checkpoint 恢复（无状态执行器任务）。暂停时执行器发出 `breakpoint_hit` 或 `waiting_signal`（载荷含 `Checkpoint`），控制面将 `runs.status=paused` 并存储 `checkpoint_json` / `pause_reason`，随后任务结束。用户通过 `signal` / `PATCH state` / `PUT breakpoints` 更新运行；恢复时带着 `checkpoint`（及活跃 `breakpoints`）重新派发同一已发布图。Web 在 `paused` 期间继续 HTTP 轮询，并展示 SignalPanel。无 WebSocket、无显式 step API；仅已发布版本可试跑的规则不变。
 
-**Tech Stack:** Existing M1/M2 stack — TypeScript, pnpm, Hono, Drizzle, PostgreSQL, Vite, React, XYFlow, Vitest, Zod; Python 3.11+ executor (`awo_executor`), pytest. Paths use `apps/control-plane` (not `apps/api`).
+**技术栈：** 沿用 M1/M2 技术栈 — TypeScript、pnpm、Hono、Drizzle、PostgreSQL、Vite、React、XYFlow、Vitest、Zod；Python 3.11+ 执行器（`awo_executor`）、pytest。路径使用 `apps/control-plane`（不是 `apps/api`）。
 
-**Spec:** `docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md`
+**规格：** `docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md`
 
-## Global Constraints
+## 全局约束
 
-- Product: 编排画布 + 运行时调试 — M3 ships **breakpoint + signal + HumanApproval/Input**; roles/assets/publish gate are M4; subflow/templates/metrics are M5
-- Resume model: **checkpoint re-dispatch only** (not in-process wait, not per-node CP scheduler)
-- Deploy shape: 前后端分离；Runtime 仍是 `apps/executor-py`
-- Auth: stub `X-User-Id`; executor callbacks `X-Executor-Token` (env `EXECUTOR_TOKEN`) — unchanged
-- Graph is language-agnostic JSON; secrets never inside `graph_json`
-- **Only published** `flow_versions` may be test-run (M2 rule; do not add draft dry-run)
-- Do not change M1 publish immutability rules
-- Timeline delivery: **HTTP poll** (keep; do not stop on `paused`; stop only on terminal)
-- No explicit `step` API; temporary next-node breakpoint is enough later
-- No real multi-approver routing / SLA / email notify
-- No real LLM; AST-safe Branch only
-- Migration name exact: `0003_m3_pause_signal`
-- Dynamic breakpoints: pause **BEFORE entering** node id listed in `job.breakpoints`
-- `Breakpoint` node: **enter then pause**; on `resume`, **skip re-entry** and follow outgoing edge
-- Seq assignment remains server-side monotonic (M2)
-- Cancel while `paused` → `cancelled` immediately (no re-dispatch); do not leave `cancel_requested` stuck on a paused run with no worker
+- 产品：编排画布 + 运行时调试 — M3 交付 **断点 + 信号 + HumanApproval/Input**；角色/资产/发布门禁在 M4；子流程/模板/指标在 M5
+- 恢复模型：**仅 checkpoint 重新派发**（不是进程内等待，也不是按节点的 CP 调度）
+- 部署形态：前后端分离；Runtime 仍是 `apps/executor-py`
+- 鉴权：桩 `X-User-Id`；执行器回调 `X-Executor-Token`（环境变量 `EXECUTOR_TOKEN`）— 不变
+- 图是语言无关 JSON；密钥不得出现在 `graph_json` 内
+- **仅已发布**的 `flow_versions` 可试跑（M2 规则；不要加草稿 dry-run）
+- 不要改动 M1 发布不可变规则
+- 时间线投递：**HTTP 轮询**（保留；`paused` 时不停；仅终态停止）
+- 无显式 `step` API；以后用临时下一节点断点即可
+- 无真实多人审批路由 / SLA / 邮件通知
+- 无真实 LLM；Branch 仅 AST 安全表达式
+- 迁移名必须精确：`0003_m3_pause_signal`
+- 动态断点：在进入 `job.breakpoints` 所列节点 id **之前**暂停
+- `Breakpoint` 节点：**进入后暂停**；`resume` 时 **跳过再入** 并沿出边继续
+- seq 仍由服务端单调分配（M2）
+- `paused` 时取消 → 立即 `cancelled`（不重新派发）；不要让无 worker 的暂停运行卡在 `cancel_requested`
 
-**Follow-up plans (do not implement in this plan):** M4 roles/assets/publish gate; M5 subflow/templates/metrics; WS/SSE push; explicit step API.
+**后续计划（本计划不要实现）：** M4 角色/资产/发布门禁；M5 子流程/模板/指标；WS/SSE 推送；显式 step API。
 
 ---
 
-## Key architecture decisions (locked for M3)
+## 关键架构决策（M3 已锁定）
 
-| Decision | Choice | Rationale |
+| 决策 | 选择 | 理由 |
 |---|---|---|
-| Resume | Persist checkpoint; end job; re-dispatch with `JobPayload.checkpoint` | Spec; survives executor restart; language-agnostic |
-| Pause signal path | Pause events carry `checkpoint` in payload; internal `/events` handler sets `paused` | One callback path; no `/pause` endpoint |
-| Status after pause | `paused` (not terminal); `finishedAt` stays null | Spec RunStatus |
-| Status on resume dispatch | Set `queued`, then executor posts `running` | Matches M2 create flow |
-| Dynamic BP | Before `node_started` / execute; checkpoint `node_id` = that node; `pause_kind=breakpoint` | Spec |
-| Breakpoint node | Run as no-op transform that forces pause after “enter”; resume skips re-entry | Spec |
-| HumanApproval resume | `approve` → `resume_edge_kind=success`; `reject` → `failure` (fallback `default`); do not re-run side effects | Spec |
-| Input resume | Merge `payload` into checkpoint state as `pending_input` / state; continue on default/success out | Spec |
-| Invalid signal | `400` if kind mismatches `pause_reason` | Spec |
-| Breakpoints scope | Active run only (`run_breakpoints`); included on every dispatch / re-dispatch | Spec M3 minimum |
-| Cancel from paused | Direct `cancelled` + `finishedAt`; append `log` optional | Spec acceptance #4 |
+| 恢复 | 持久化 checkpoint；结束任务；带着 `JobPayload.checkpoint` 重新派发 | 规格；可在执行器重启后存活；语言无关 |
+| 暂停信号路径 | 暂停事件在载荷中携带 `checkpoint`；内部 `/events` 处理器设为 `paused` | 单一回调路径；无 `/pause` 端点 |
+| 暂停后状态 | `paused`（非终态）；`finishedAt` 保持 null | 规格 RunStatus |
+| 恢复派发时状态 | 设为 `queued`，然后执行器上报 `running` | 与 M2 创建流程一致 |
+| 动态断点 | 在 `node_started` / 执行之前；checkpoint `node_id` = 该节点；`pause_kind=breakpoint` | 规格 |
+| Breakpoint 节点 | 作为强制「进入后暂停」的空操作 transform；恢复时跳过再入 | 规格 |
+| HumanApproval 恢复 | `approve` → `resume_edge_kind=success`；`reject` → `failure`（回退 `default`）；不要重跑副作用 | 规格 |
+| Input 恢复 | 把 `payload` 合并进 checkpoint state（`pending_input` / state）；沿 default/success 出边继续 | 规格 |
+| 非法信号 | 若 kind 与 `pause_reason` 不匹配则 `400` | 规格 |
+| 断点作用域 | 仅当前活跃运行（`run_breakpoints`）；每次派发/再派发都带上 | 规格 M3 最低要求 |
+| 从暂停取消 | 直接 `cancelled` + `finishedAt`；可选追加 `log` | 规格验收 #4 |
 
 ---
 
-## File map (create / modify in M3)
+## 文件地图（M3 创建/修改）
 
 ```
 agent-workflow-orchestrator/
@@ -99,15 +99,15 @@ agent-workflow-orchestrator/
 
 ---
 
-### Task 1: `@awo/run-protocol` — paused, events, Checkpoint, JobPayload
+### 任务 1：`@awo/run-protocol` — paused、事件、Checkpoint、JobPayload
 
-**Files:**
-- Modify: `packages/run-protocol/src/run.ts`, `packages/run-protocol/src/index.ts`
-- Test: `packages/run-protocol/src/run.test.ts`
+**文件：**
+- 修改：`packages/run-protocol/src/run.ts`, `packages/run-protocol/src/index.ts`
+- 测试：`packages/run-protocol/src/run.test.ts`
 
-**Interfaces:**
-- Consumes: existing `FlowGraphSchema` import
-- Produces (extend, keep backward compatible required fields):
+**接口：**
+- 消费：现有 `FlowGraphSchema` 导入
+- 产出（扩展，保持向后兼容的必填字段）：
   - `RunStatus` += `"paused"`
   - `RunEventType` += `"breakpoint_hit" | "waiting_signal" | "signal_received" | "state_patched"`
   - `PauseKindSchema` = `"breakpoint" | "approval" | "input"`
@@ -123,9 +123,9 @@ agent-workflow-orchestrator/
     ```
   - `JobPayload` += optional `checkpoint?: Checkpoint`, `breakpoints?: string[]`
   - `SignalKindSchema` (API body helper, optional export) = `"approve" | "reject" | "input" | "resume"`
-  - Existing `parseJobPayload` / `parseCallbackEvent` must accept pause events and jobs with checkpoint
+  - 现有 `parseJobPayload` / `parseCallbackEvent` 必须接受暂停事件与带 checkpoint 的 job
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -197,15 +197,15 @@ describe("run-protocol M3", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests — expect FAIL**
+- [ ] **步骤 2：跑测试 — 预期失败**
 
 ```bash
 pnpm --filter @awo/run-protocol test
 ```
 
-Expected: FAIL (unknown enum members / missing `CheckpointSchema`).
+预期：失败（未知枚举成员 / 缺少 `CheckpointSchema`）。
 
-- [ ] **Step 3: Implement schemas in `run.ts`**
+- [ ] **步骤 3：在 `run.ts` 实现 schema**
 
 ```ts
 export const RunStatusSchema = z.enum([
@@ -263,11 +263,11 @@ export const SignalKindSchema = z.enum([
 ]);
 ```
 
-Re-export new symbols from `src/index.ts`.
+从 `src/index.ts` 再导出新符号。
 
-- [ ] **Step 4: Run tests — expect PASS**
+- [ ] **步骤 4：跑测试 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add packages/run-protocol
@@ -276,15 +276,15 @@ git commit -m "feat(run-protocol): add paused status, pause events, and Checkpoi
 
 ---
 
-### Task 2: DB — `0003_m3_pause_signal` + seed HumanApproval / Input / Breakpoint
+### 任务 2：DB — `0003_m3_pause_signal` + 种子 HumanApproval / Input / Breakpoint
 
-**Files:**
-- Modify: `apps/control-plane/src/db/schema.ts`, `apps/control-plane/src/db/seed.ts`
-- Create: `apps/control-plane/drizzle/0003_m3_pause_signal.sql` (and update `drizzle/meta` if using drizzle-kit generate; hand-written SQL is fine if consistent with `0002_runs.sql`)
-- Test: `apps/control-plane/tests/runs-schema.test.ts` (extend), `apps/control-plane/tests/db-seed.test.ts` if present
+**文件：**
+- 修改：`apps/control-plane/src/db/schema.ts`, `apps/control-plane/src/db/seed.ts`
+- 创建：`apps/control-plane/drizzle/0003_m3_pause_signal.sql`（若用 drizzle-kit generate 则更新 `drizzle/meta`；手写 SQL 亦可，需与 `0002_runs.sql` 一致）
+- 测试：`apps/control-plane/tests/runs-schema.test.ts` (extend), `apps/control-plane/tests/db-seed.test.ts` if present
 
-**Interfaces:**
-- Consumes: existing Drizzle `runs` / `run_events`
+**接口：**
+- 消费：现有 Drizzle `runs` / `run_events`
 - Produces:
 
 `runs` columns added:
@@ -295,21 +295,21 @@ git commit -m "feat(run-protocol): add paused status, pause events, and Checkpoi
 - `id` text PK
 - `runId` text not null
 - `nodeId` text not null
-- `active` integer not null default 1 (1=active, 0=inactive) — avoid new boolean column type drift vs M1/M2 text/int style
+- `active` integer 非空默认 1（1=活跃，0=不活跃）— 避免相对 M1/M2 text/int 风格引入新的 boolean 列类型漂移
 - unique `(runId, nodeId)`
 
 `run_signals`:
 - `id` text PK
 - `runId` text not null
-- `kind` text not null (`approval` | `input` | `resume`) — store approve/reject under `approval` with outcome in `payload_json`
+- `kind` text 非空（`approval` | `input` | `resume`）— approve/reject 存为 `approval`，结果放在 `payload_json`
 - `payloadJson` jsonb not null
 - `status` text not null (`pending` | `consumed` | `rejected`)
 - `createdAt` timestamptz default now()
 
 Seed `node_defs` for workspace `ws_demo`:
-- `HumanApproval` — category `control`, uiMeta orange
-- `Input` — category `control`, uiMeta orange/teal
-- `Breakpoint` — category `debug`, uiMeta red/orange
+- `HumanApproval` — category `control`，uiMeta 橙色
+- `Input` — category `control`，uiMeta 橙/青
+- `Breakpoint` — category `debug`，uiMeta 红/橙
 
 SQL sketch (`0003_m3_pause_signal.sql`):
 
@@ -336,7 +336,7 @@ CREATE TABLE "run_signals" (
 );
 ```
 
-- [ ] **Step 1: Write failing schema/seed tests**
+- [ ] **步骤 1：编写会失败的 schema/种子测试**
 
 ```ts
 it("runs table exposes checkpoint_json and pause_reason columns in schema export", () => {
@@ -359,22 +359,22 @@ it("seed includes HumanApproval, Input, Breakpoint", async () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
 ```bash
 pnpm --filter @awo/control-plane exec vitest run tests/runs-schema.test.ts tests/db-seed.test.ts
 ```
 
-- [ ] **Step 3: Add Drizzle tables + migration + seed entries**
+- [ ] **步骤 3：添加 Drizzle 表 + 迁移 + 种子条目**
 
 ```bash
 pnpm --filter @awo/control-plane db:migrate
 pnpm --filter @awo/control-plane db:seed
 ```
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/control-plane/src/db apps/control-plane/drizzle apps/control-plane/tests
@@ -383,21 +383,21 @@ git commit -m "feat(control-plane): M3 pause columns, breakpoints, and signals t
 
 ---
 
-### Task 3: Control-plane — pause on events, signal / state / breakpoints, re-dispatch
+### 任务 3：控制面 — 事件暂停、signal / state / breakpoints、再派发
 
-**Files:**
-- Modify: `apps/control-plane/src/services/run-service.ts`, `apps/control-plane/src/services/executor-client.ts`, `apps/control-plane/src/routes/runs.ts`, `apps/control-plane/src/routes/internal-runs.ts`
-- Test: `apps/control-plane/tests/runs.test.ts`, `apps/control-plane/tests/executor-callback.test.ts`
+**文件：**
+- 修改：`apps/control-plane/src/services/run-service.ts`, `apps/control-plane/src/services/executor-client.ts`, `apps/control-plane/src/routes/runs.ts`, `apps/control-plane/src/routes/internal-runs.ts`
+- 测试：`apps/control-plane/tests/runs.test.ts`, `apps/control-plane/tests/executor-callback.test.ts`
 
-**Interfaces:**
-- Consumes: Task 1 types; Task 2 tables; existing `dispatchJob` / `pushJobToExecutor`
-- Produces HTTP (user-facing, `X-User-Id`):
+**接口：**
+- 消费：任务 1 类型；任务 2 表；现有 `dispatchJob` / `pushJobToExecutor`
+- 产出 HTTP（面向用户，`X-User-Id`）：
 
-| Method | Path | Body / notes |
+| 方法 | 路径 | Body / 说明 |
 |---|---|---|
-| `POST` | `/runs/:runId/signal` | `{ kind: "approve"\|"reject"\|"input"\|"resume", payload?: object }` — only `paused`; emits `signal_received`; updates checkpoint; re-dispatch |
-| `PATCH` | `/runs/:runId/state` | `{ state: object }` full replace **or** `{ patch: object }` shallow merge — only `paused`; updates `checkpoint_json.state`; emits `state_patched` |
-| `PUT` | `/runs/:runId/breakpoints` | `{ node_ids: string[] }` — upsert rows, set `active=1` for listed, `active=0` for others on this run |
+| `POST` | `/runs/:runId/signal` | `{ kind: "approve"\|"reject"\|"input"\|"resume", payload?: object }` — 仅 `paused`；发出 `signal_received`；更新 checkpoint；再派发 |
+| `PATCH` | `/runs/:runId/state` | `{ state: object }` 全量替换 **或** `{ patch: object }` 浅合并 — 仅 `paused`；更新 `checkpoint_json.state`；发出 `state_patched` |
+| `PUT` | `/runs/:runId/breakpoints` | `{ node_ids: string[] }` — upsert 行，所列设 `active=1`，本 run 其余设 `active=0` |
 | `GET` | `/runs/:runId/breakpoints` | `{ node_ids: string[] }` active only |
 | `POST` | `/runs/:runId/cancel` | allow from `paused` → set `cancelled` + `finishedAt` (not `cancel_requested`) |
 
@@ -409,12 +409,12 @@ Internal `/internal/runs/:runId/events`:
 - After insert, if `event_type` is `breakpoint_hit` or `waiting_signal`:
   - Require `payload.checkpoint` parseable as `Checkpoint`
   - Update run: `status=paused`, `checkpoint_json=checkpoint`, `pause_reason=checkpoint.pause_kind`, clear `finishedAt` if any
-- Do **not** treat `paused` as terminal in status handler; accepting `status: "paused"` is optional belt-and-suspenders (if executor also posts it). Prefer event-driven pause as source of truth.
+- 状态处理器**不要**把 `paused` 当终态；接受 `status: "paused"` 可作为可选双保险（若执行器也会上报）。优先以事件驱动暂停为真相来源。
 
 `pushJobToExecutor(runId)`:
-- Load active breakpoints (`active=1`) → `breakpoints: string[]`
-- If `run.checkpointJson` present and status is `queued` (resume path), include `checkpoint`
-- On first create, checkpoint is null
+- 加载活跃断点（`active=1`）→ `breakpoints: string[]`
+- 若有 `run.checkpointJson` 且状态为 `queued`（恢复路径），带上 `checkpoint`
+- 首次创建时 checkpoint 为 null
 
 Signal semantics in `signalRun(...)`:
 
@@ -467,7 +467,7 @@ if (status === "paused") {
 // else existing queued|running → cancel_requested
 ```
 
-- [ ] **Step 1: Write failing API + callback tests**
+- [ ] **步骤 1：编写会失败的 API + 回调测试**
 
 ```ts
 it("pause event sets run to paused and stores checkpoint", async () => {
@@ -539,19 +539,19 @@ it("cancel while paused → cancelled", async () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
 ```bash
 pnpm --filter @awo/control-plane exec vitest run tests/runs.test.ts tests/executor-callback.test.ts
 ```
 
-- [ ] **Step 3: Implement service methods, routes, internal pause handling, executor-client job fields**
+- [ ] **步骤 3：实现 service 方法、路由、内部暂停处理、executor-client job 字段**
 
-Wire routes in `runs.ts` (same error mapping pattern as existing handlers). Export new functions from `run-service.ts`: `signalRun`, `patchRunState`, `putBreakpoints`, `getBreakpoints`; extend `getRun`, `cancelRun`.
+在 `runs.ts` 接线路由（错误映射模式同现有 handler）。从 `run-service.ts` 导出新函数：`signalRun`、`patchRunState`、`putBreakpoints`、`getBreakpoints`；扩展 `getRun`、`cancelRun`。
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/control-plane/src apps/control-plane/tests
@@ -560,19 +560,19 @@ git commit -m "feat(control-plane): pause handling, signal, state patch, breakpo
 
 ---
 
-### Task 4: Python executor — breakpoints, Breakpoint / HumanApproval / Input, checkpoint resume
+### 任务 4：Python 执行器 — 断点、Breakpoint / HumanApproval / Input、checkpoint 恢复
 
-**Files:**
-- Modify: `apps/executor-py/src/awo_executor/engine.py`, `apps/executor-py/src/awo_executor/nodes.py`
-- Test: `apps/executor-py/tests/test_engine.py`, `apps/executor-py/tests/test_nodes.py`
+**文件：**
+- 修改：`apps/executor-py/src/awo_executor/engine.py`, `apps/executor-py/src/awo_executor/nodes.py`
+- 测试：`apps/executor-py/tests/test_engine.py`, `apps/executor-py/tests/test_nodes.py`
 - Optional fixture: `apps/executor-py/tests/fixtures/m3_approval_graph.json`
 
-**Interfaces:**
-- Consumes: JobPayload JSON with optional `checkpoint`, `breakpoints`
-- Produces: ordered callbacks as M2, plus on pause:
-  1. `breakpoint_hit` or `waiting_signal` event with `payload.checkpoint` (full Checkpoint object) and `node_id`
-  2. Optional `post_status(run_id, "paused")` after the event (control plane event handler is authoritative)
-  3. **Return from `run_job`** — do not post `succeeded`/`failed`
+**接口：**
+- 消费：带可选 `checkpoint`、`breakpoints` 的 JobPayload JSON
+- 产出：与 M2 相同的有序回调，暂停时额外：
+  1. `breakpoint_hit` 或 `waiting_signal` 事件，带 `payload.checkpoint`（完整 Checkpoint 对象）与 `node_id`
+  2. 事件后可选 `post_status(run_id, "paused")`（以控制面事件处理器为准）
+  3. **从 `run_job` 返回** — 不要上报 `succeeded`/`failed`
 
 Extend `NodeResult`:
 
@@ -597,23 +597,23 @@ Node handlers:
 - `execute_human_approval(config, state)` → `pause=True`, `pause_kind="approval"`
 - `execute_input(config, state)` → `pause=True`, `pause_kind="input"`, `waiting_schema=config.get("schema")`
 
-Engine loop changes:
+Engine 循环改动：
 
-1. **Start from checkpoint** when present:
+1. 有 checkpoint 时 **从 checkpoint 开始**：
    - `state = copy.deepcopy(checkpoint["state"])`
    - `current_id = checkpoint["node_id"]`
    - `resuming = True`
-   - Still post `running` + `run_started` (or a `log` that this is a resume — keep `run_started` for simplicity; timeline may show multiple — acceptable for M3; alternatively skip duplicate `run_started` if events already exist — **prefer:** always `post_status(running)`; emit `log` `{message:"resume", checkpoint_node}` instead of second `run_started`)
-2. **Before enter** (when not handling resume skip):
-   - If `current_id in breakpoints` and not (`resuming` and checkpoint was dynamic pause on this id with signal resume already applied): emit `breakpoint_hit`, build checkpoint, exit
-   - On **first** job hit: pause before enter (no `node_started` yet)
-   - On **resume** after dynamic BP: `resuming` clears the before-enter check for that `node_id` once, then enters normally
-3. **Breakpoint node resume:** if `resuming` and `pause_kind==breakpoint` and node type is `Breakpoint`: do **not** call execute again; emit nothing for re-entry; set `current_id = pick_default_next(out_edges)`; clear `resuming`; continue
-4. **Approval resume:** if `resuming` and `pause_kind==approval`: take edge `resume_edge_kind` (`failure` fallback to `default` if missing); clear resuming; no `node_started`/`finished` for approval again
-5. **Input resume:** if `resuming` and `pause_kind==input`: merge `pending_input` or already-merged state; take default/success out; clear resuming
-6. After normal execute, if `result.pause`: emit appropriate event + checkpoint (`node_id`, `state=result.state`, `pause_kind`), then return
+   - 仍上报 `running` + `run_started`（或一条表示恢复的 `log` — 为简单保留 `run_started`；时间线可能多条 — M3 可接受；也可在已有事件时跳过重复 `run_started` — **优先：** 总是 `post_status(running)`；发 `log` `{message:"resume", checkpoint_node}` 代替第二次 `run_started`）
+2. **进入前**（未处理恢复跳过时）：
+   - 若 `current_id in breakpoints` 且并非（正在恢复且该 id 上已做过动态暂停并已应用 signal resume）：发出 `breakpoint_hit`，构建 checkpoint，退出
+   - **首次**命中 job：进入前暂停（尚无 `node_started`）
+   - 动态断点后 **恢复**：`resuming` 对该 `node_id` 一次性清除进入前检查，然后正常进入
+3. **Breakpoint 节点恢复：** 若 `resuming` 且 `pause_kind==breakpoint` 且节点类型为 `Breakpoint`：**不要**再 execute；再入不发事件；设 `current_id = pick_default_next(out_edges)`；清除 `resuming`；继续
+4. **审批恢复：** 若 `resuming` 且 `pause_kind==approval`：走边 `resume_edge_kind`（缺 `failure` 则回退 `default`）；清除 resuming；不再为审批发 `node_started`/`finished`
+5. **Input 恢复：** 若 `resuming` 且 `pause_kind==input`：合并 `pending_input` 或已合并 state；走 default/success 出边；清除 resuming
+6. 正常 execute 后，若 `result.pause`：发出相应事件 + checkpoint（`node_id`、`state=result.state`、`pause_kind`），然后返回
 
-Checkpoint builder helper in engine:
+Engine 中的 Checkpoint 构建辅助：
 
 ```python
 def _checkpoint(node_id: str, state: dict, pause_kind: str, **extra) -> dict:
@@ -638,7 +638,7 @@ def _checkpoint(node_id: str, state: dict, pause_kind: str, **extra) -> dict:
 {"checkpoint": cp, "state_snapshot": cp["state"]}
 ```
 
-- [ ] **Step 1: Write failing pytest**
+- [ ] **步骤 1：编写会失败的 pytest**
 
 ```python
 def test_dynamic_breakpoint_pauses_before_enter(mock_callbacks):
@@ -697,21 +697,21 @@ def test_human_approval_reject_takes_failure_edge(mock_callbacks):
     assert mock_callbacks.output.get("path") == "rejected"  # set by Transform on failure path
 ```
 
-Also unit-test `execute_breakpoint` / `execute_human_approval` / `execute_input` return `pause=True`.
+同时单测 `execute_breakpoint` / `execute_human_approval` / `execute_input` 返回 `pause=True`。
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
 ```bash
 cd apps/executor-py && python -m pytest tests/test_engine.py tests/test_nodes.py -v
 ```
 
-- [ ] **Step 3: Implement nodes + engine resume/pause paths; keep M2 graphs green**
+- [ ] **步骤 3：实现 nodes + engine 恢复/暂停路径；保持 M2 图绿灯**
 
-Re-run full executor suite to ensure Start→Transform→Branch→Emit→End still passes.
+重跑完整执行器套件，确保 Start→Transform→Branch→Emit→End 仍通过。
 
-- [ ] **Step 4: Run pytest — expect PASS**
+- [ ] **步骤 4：跑 pytest — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/executor-py
@@ -720,15 +720,15 @@ git commit -m "feat(executor-py): checkpoint resume, breakpoints, approval and i
 
 ---
 
-### Task 5: Integration test — pause → patch/signal → resume (+ cancel)
+### 任务 5：集成测试 — 暂停 → patch/signal → 恢复（+ 取消）
 
-**Files:**
-- Create: `apps/control-plane/tests/m3-integration.test.ts`
-- Modify: root `package.json` — add `"test:m3"` script (mirror `test:m2`)
+**文件：**
+- 创建：`apps/control-plane/tests/m3-integration.test.ts`
+- 修改：根 `package.json` — 添加 `"test:m3"` 脚本（对齐 `test:m2`）
 
-**Interfaces:**
-- Consumes: live Postgres, Hono app, spawned uvicorn executor (copy spawn helpers from `m3-integration` ← clone patterns in `tests/m2-integration.test.ts`)
-- Produces automated coverage of acceptance §7.1–7.5
+**接口：**
+- 消费：真实 Postgres、Hono app、spawn 的 uvicorn 执行器（从 `tests/m2-integration.test.ts` 克隆 spawn 辅助到 m3-integration）
+- 产出验收 §7.1–7.5 的自动化覆盖
 
 `package.json` script:
 
@@ -736,13 +736,13 @@ git commit -m "feat(executor-py): checkpoint resume, breakpoints, approval and i
 "test:m3": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m3} pnpm --filter @awo/control-plane exec vitest run tests/m3-integration.test.ts"
 ```
 
-Graphs to publish inside the test:
+测试内要发布的图：
 
-1. **Breakpoint graph:** Start → Transform(`n_transform`) → Emit → End  
-2. **Approval graph:** Start → HumanApproval(`n_approve`) → (success) Transform(set `path=approved`) → End; (failure) Transform(set `path=rejected`) → End  
-3. **Input graph:** Start → Input(`n_input`, schema `{name:string}`) → Emit → End
+1. **Breakpoint 图：** Start → Transform(`n_transform`) → Emit → End
+2. **审批图：** Start → HumanApproval(`n_approve`) →（success）Transform(设 `path=approved`) → End；（failure）Transform(设 `path=rejected`) → End
+3. **Input 图：** Start → Input(`n_input`，schema `{name:string}`) → Emit → End
 
-Required cases (can be separate `it` blocks sharing `beforeAll` servers):
+必需用例（可为独立 `it` 块，共享 `beforeAll` 服务）：
 
 ```ts
 it("dynamic breakpoint → patch state → resume → succeeded", async () => {
@@ -762,21 +762,21 @@ it("dynamic breakpoint → patch state → resume → succeeded", async () => {
 });
 ```
 
-**Deterministic helper (required in this task):** export or duplicate a test-only path:
+**确定性辅助（本任务必需）：** 导出或复制仅测试路径：
 
-1. Insert published flow as M2 test does  
-2. `createTestRun` normally for Breakpoint-**node** and HumanApproval/Input graphs (no race)  
-3. For **dynamic** breakpoints: after inserting run in a small service helper used by tests, OR: `PUT /runs/:id/breakpoints` is documented as applying to **next** dispatch — for first dispatch, integration test inserts into `run_breakpoints` inside the test via drizzle **before** calling `dispatchJob`, using a two-phase create:
-   - Add optional body field **only if already exists** — do **not** add API field in M3  
-   - Instead: in integration test, use `db.insert(runBreakpoints)` then `dispatchJob` after manually inserting a `queued` run (copy `createTestRun` internals)  
-   - Simpler acceptable approach: **primary dynamic BP test in Python unit tests (Task 4)**; integration test uses a **`Breakpoint` node** in the graph for pause→patch→resume, and separately tests HumanApproval/Input via signals. Still call `PUT /runs/:id/breakpoints` while paused and assert GET; prove dynamic BP on a **second** segment by setting breakpoints while paused on a successor then resume (optional).  
+1. 像 M2 测试一样插入已发布 flow
+2. 对 Breakpoint-**节点** 与 HumanApproval/Input 图正常 `createTestRun`（无竞态）
+3. 对 **动态** 断点：在测试用的小 service 辅助里插入 run 之后；或：文档约定 `PUT /runs/:id/breakpoints` 作用于 **下一次** 派发 — 首次派发时，集成测试在调用 `dispatchJob` **之前** 用 drizzle 向 `run_breakpoints` 插入，采用两阶段创建：
+   - **仅当已存在**时加可选 body 字段 — M3 **不要**新增 API 字段
+   - 改为：集成测试中先手动插入 `queued` run，再 `db.insert(runBreakpoints)`，然后 `dispatchJob`（复制 `createTestRun` 内部逻辑）
+   - 更简单可接受做法：**动态断点主测放在 Python 单元测试（任务 4）**；集成测试用图中的 **`Breakpoint` 节点** 做暂停→patch→恢复，并单独用 signal 测 HumanApproval/Input。暂停时仍调用 `PUT /runs/:id/breakpoints` 并断言 GET；可选在暂停时对后续节点设断点再恢复，验证第二段动态断点。
 
-**Minimum integration assertions (must all pass):**
+**最低集成断言（必须全部通过）：**
 
-1. Graph with `Breakpoint` node: run → `paused` / `pauseReason=breakpoint` → `PATCH state` `{patch:{debug:true}}` → events include `state_patched` → `signal resume` → `succeeded`; events include `breakpoint_hit`, `signal_received`  
-2. HumanApproval: Approve → output/state shows success path; new run Reject → failure path  
-3. Input: `signal input` with `{name:"Ada"}` → later Emit/state contains `name`  
-4. Cancel while paused → `cancelled`; no `node_finished` after cancel timestamp  
+1. 含 `Breakpoint` 节点的图：运行 → `paused` / `pauseReason=breakpoint` → `PATCH state` `{patch:{debug:true}}` → 事件含 `state_patched` → `signal resume` → `succeeded`；事件含 `breakpoint_hit`、`signal_received`
+2. HumanApproval：Approve → output/state 走成功路径；新 run Reject → 失败路径
+3. Input：`signal input` 带 `{name:"Ada"}` → 后续 Emit/state 含 `name`
+4. 暂停时取消 → `cancelled`；取消时间戳之后无 `node_finished`
 
 Poll helper:
 
@@ -794,21 +794,21 @@ async function waitForStatus(runId: string, want: string | string[], timeoutMs =
 }
 ```
 
-- [ ] **Step 1: Write failing integration test file**
+- [ ] **步骤 1：编写会失败的集成测试文件**
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
 ```bash
 pnpm test:m3
 ```
 
-- [ ] **Step 3: Fix wiring / races / tokens (same ports pattern as M2)**
+- [ ] **步骤 3：修复接线 / 竞态 / token（端口模式同 M2）**
 
-Also re-run `pnpm test:m2` to ensure no regression.
+同时重跑 `pnpm test:m2` 确保无回归。
 
-- [ ] **Step 4: Run `pnpm test:m3` and `pnpm test:m2` — expect PASS**
+- [ ] **步骤 4：运行 `pnpm test:m3` 与 `pnpm test:m2` — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/control-plane/tests/m3-integration.test.ts package.json
@@ -817,23 +817,23 @@ git commit -m "test: M3 pause signal resume integration"
 
 ---
 
-### Task 6: Web — SignalPanel, state editor, breakpoints, timeline, poll, sample
+### 任务 6：Web — SignalPanel、状态编辑器、断点、时间线、轮询、样例
 
-**Files:**
-- Create: `apps/web/src/run/SignalPanel.tsx`, `apps/web/src/run/StateEditor.tsx`, `apps/web/src/sample-m3-graph.ts`
-- Modify: `apps/web/src/api/client.ts`, `apps/web/src/api/runs.test.ts`, `apps/web/src/run/useRunPoll.ts`, `apps/web/src/run/useRunPoll.test.ts`, `apps/web/src/run/RunTimeline.tsx`, `apps/web/src/run/TestRunPanel.tsx`, `apps/web/src/App.tsx`, `apps/web/src/styles/run.css`, `apps/web/src/canvas/nodes/BaseNode.tsx` (Breakpoint color if missing)
+**文件：**
+- 创建：`apps/web/src/run/SignalPanel.tsx`, `apps/web/src/run/StateEditor.tsx`, `apps/web/src/sample-m3-graph.ts`
+- 修改：`apps/web/src/api/client.ts`, `apps/web/src/api/runs.test.ts`, `apps/web/src/run/useRunPoll.ts`, `apps/web/src/run/useRunPoll.test.ts`, `apps/web/src/run/RunTimeline.tsx`, `apps/web/src/run/TestRunPanel.tsx`, `apps/web/src/App.tsx`, `apps/web/src/styles/run.css`, `apps/web/src/canvas/nodes/BaseNode.tsx` (Breakpoint color if missing)
 
-**Interfaces:**
-- Consumes: Task 3 HTTP APIs
+**接口：**
+- 消费：任务 3 的 HTTP API
 - Produces UI:
-  - `ACTIVE_RUN_STATUSES` includes `"paused"` so polling continues
-  - Pause banner: reason + node id from `run.pauseReason` / `run.checkpoint?.node_id`
-  - `SignalPanel`: show Approve/Reject if `pauseReason==="approval"`; Input form if `input`; Resume if `breakpoint`
-  - `StateEditor`: textarea JSON, Save → `PATCH /runs/:id/state` with `{ state: parsed }` (full replace from editor)
-  - Breakpoint toggles: when a run is selected (or last run), right-click / button on selected canvas node calls `putBreakpoints` with toggled set; highlight nodes whose ids are in active breakpoints (CSS class `awo-node--breakpoint`)
+  - `ACTIVE_RUN_STATUSES` 包含 `"paused"`，以便继续轮询
+  - 暂停横幅：来自 `run.pauseReason` / `run.checkpoint?.node_id` 的原因 + 节点 id
+  - `SignalPanel`：`pauseReason==="approval"` 显示 Approve/Reject；`input` 显示输入表单；`breakpoint` 显示 Resume
+  - `StateEditor`：JSON 文本框，保存 → `PATCH /runs/:id/state` 带 `{ state: parsed }`（编辑器全量替换）
+  - 断点切换：选中某次 run（或最近一次）时，对画布选中节点右键/按钮调用 `putBreakpoints`（切换集合）；高亮活跃断点节点（CSS 类 `awo-node--breakpoint`）
   - Timeline labels for `breakpoint_hit`, `waiting_signal`, `signal_received`, `state_patched`
-  - Sample: `SAMPLE_M3_GRAPH` — Start → Transform → Breakpoint → HumanApproval → (success Emit → End) / (failure End); load button in App
-  - `RunStatus` type in client includes `paused`; `RunDetail` adds `pauseReason`, `checkpoint`
+  - 样例：`SAMPLE_M3_GRAPH` — Start → Transform → Breakpoint → HumanApproval →（success Emit → End）/（failure End）；App 中有加载按钮
+  - 客户端 `RunStatus` 类型含 `paused`；`RunDetail` 增加 `pauseReason`、`checkpoint`
 
 Client additions:
 
@@ -855,9 +855,9 @@ export const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
 ]);
 ```
 
-Update `useRunPoll.test.ts` so `paused` keeps polling `true`.
+更新 `useRunPoll.test.ts`，使 `paused` 时轮询保持 `true`。
 
-- [ ] **Step 1: Write failing client + poll tests**
+- [ ] **步骤 1：编写会失败的客户端 + 轮询测试**
 
 ```ts
 it("createApiClient.signalRun posts kind resume", async () => {
@@ -880,15 +880,15 @@ it("nextPollingState stays active for paused", () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
 ```bash
 pnpm --filter @awo/web test
 ```
 
-- [ ] **Step 3: Implement client, poll, SignalPanel, StateEditor, timeline, sample, App wiring, CSS**
+- [ ] **步骤 3：实现 client、轮询、SignalPanel、StateEditor、时间线、样例、App 接线、CSS**
 
-Manual smoke checklist (document in commit message / README later):
+手工冒烟清单（稍后写入提交说明 / README）：
 
 ```bash
 pnpm db:up
@@ -899,14 +899,14 @@ cd apps/executor-py && EXECUTOR_TOKEN=dev uvicorn awo_executor.main:app --port 8
 pnpm --filter @awo/web dev
 ```
 
-1. Load M3 sample → Save → Publish → 试运行  
-2. Hit Breakpoint → banner + Resume; edit state; continue  
-3. Hit HumanApproval → Approve / Reject  
-4. Timeline shows new event types; poll does not stop while paused  
+1. 加载 M3 样例 → 保存 → 发布 → 试运行
+2. 命中 Breakpoint → 横幅 + Resume；编辑 state；继续
+3. 命中 HumanApproval → Approve / Reject
+4. 时间线显示新事件类型；暂停时轮询不停
 
-- [ ] **Step 4: Run unit tests — PASS**
+- [ ] **步骤 4：跑单元测试 — 通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/web
@@ -915,40 +915,40 @@ git commit -m "feat(web): signal panel, state editor, breakpoints, M3 sample"
 
 ---
 
-### Task 7: Docs — OpenAPI, README, design status, parent status
+### 任务 7：文档 — OpenAPI、README、设计状态、父规格状态
 
-**Files:**
-- Modify: `docs/run-protocol-openapi.md`, `README.md`
-- Modify: `docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md` (Status)
-- Modify: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (Status line)
+**文件：**
+- 修改：`docs/run-protocol-openapi.md`, `README.md`
+- 修改：`docs/superpowers/specs/2026-10-22-m3-breakpoint-signal-human-approval-design.md` (Status)
+- 修改：`docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (Status line)
 
-**Interfaces:**
-- Consumes: implemented routes from Tasks 3–6
-- Produces: documented M3 surface + resume rules
+**接口：**
+- 消费：任务 3–6 已实现的路由
+- 产出：文档化的 M3 表面 + 恢复规则
 
-- [ ] **Step 1: Update M3 design Status**
+- [ ] **步骤 1：更新 M3 设计 Status**
 
 ```
 - Status: approved; plan in `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
 ```
 
-Update parent design Status to also list the M3 plan path (keep M1/M2/M3 design references).
+更新父设计 Status，同时列出 M3 计划路径（保留 M1/M2/M3 设计引用）。
 
-- [ ] **Step 2: Extend OpenAPI sketch**
+- [ ] **步骤 2：扩展 OpenAPI 草图**
 
 Document:
-- `paused` in RunStatus  
-- New event types + checkpoint-in-payload on pause events  
-- `JobPayload.checkpoint` / `breakpoints`  
-- `POST /runs/{id}/signal`, `PATCH /runs/{id}/state`, `PUT|GET /runs/{id}/breakpoints`  
-- Cancel from `paused` → `cancelled`  
-- Resume rules paragraph (dynamic BP before-enter; Breakpoint node enter-then-pause, resume skips re-entry; approval edge kinds)
+- `paused` in RunStatus
+- 新事件类型 + 暂停事件载荷中的 checkpoint
+- `JobPayload.checkpoint` / `breakpoints`
+- `POST /runs/{id}/signal`, `PATCH /runs/{id}/state`, `PUT|GET /runs/{id}/breakpoints`
+- Cancel from `paused` → `cancelled`
+- 恢复规则段落（动态断点进入前；Breakpoint 节点进入后暂停，恢复跳过再入；审批边 kind）
 
-- [ ] **Step 3: README M3 section**
+- [ ] **步骤 3：README M3 节**
 
-Acceptance checklist matching spec §7; note `pnpm test:m3`; how to run sample.
+与规格 §7 对齐的验收清单；注明 `pnpm test:m3`；如何跑样例。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add docs README.md
@@ -957,57 +957,57 @@ git commit -m "docs: M3 protocol sketch, README acceptance, design status"
 
 ---
 
-## Spec coverage (self-review)
+## 规格覆盖（自检）
 
-| Spec item | Plan task |
+| 规格项 | 计划任务 |
 |---|---|
-| Goal: breakpoint pause → patch → resume | Tasks 3–6 (integration Task 5) |
-| HumanApproval / Input signals | Tasks 3–4, 5, 6 |
-| Checkpoint resume (stateless jobs) | Tasks 1, 3, 4 |
+| 目标：断点暂停 → patch → 恢复 | 任务 3–6（集成任务 5） |
+| HumanApproval / Input 信号 | 任务 3–4、5、6 |
+| Checkpoint 恢复（无状态任务） | 任务 1、3、4 |
 | RunStatus `paused` | Task 1, 3, 6 |
 | Events `breakpoint_hit`, `waiting_signal`, `signal_received`, `state_patched` | Tasks 1, 3, 4, 6 |
-| Checkpoint + JobPayload fields | Tasks 1, 3, 4 |
-| User APIs signal / state / breakpoints / cancel from paused | Task 3 |
-| Invalid signal → 400 | Task 3 |
-| Pause via event payload (no `/pause`) | Task 3 |
+| Checkpoint + JobPayload 字段 | 任务 1、3、4 |
+| 用户 API signal / state / breakpoints / 从暂停取消 | 任务 3 |
+| 非法信号 → 400 | 任务 3 |
+| 经事件载荷暂停（无 `/pause`） | 任务 3 |
 | `runs.checkpoint_json` / `pause_reason` | Task 2 |
 | `run_breakpoints` / `run_signals` | Task 2 |
 | Migration `0003_m3_pause_signal` | Task 2 |
-| Dynamic BP before-enter | Task 4 (+ unit); Task 5 Breakpoint node path |
-| Breakpoint node enter-then-pause; resume skips re-entry | Task 4 |
-| Approve/reject edges; Input merge | Tasks 3–5 |
-| Web SignalPanel / state editor / BP toggles / poll on paused / sample | Task 6 |
-| Docs OpenAPI + README; parent status | Task 7 |
-| No step API / no WS / published-only / no M4–M5 | Global Constraints |
-| Seq monotonic server-side | Unchanged (Task 3 events) |
-| Integration without hanging worker | Task 5 |
+| 动态断点进入前 | 任务 4（+ 单元）；任务 5 Breakpoint 节点路径 |
+| Breakpoint 节点进入后暂停；恢复跳过再入 | 任务 4 |
+| Approve/reject 边；Input 合并 | 任务 3–5 |
+| Web SignalPanel / 状态编辑器 / 断点切换 / 暂停轮询 / 样例 | 任务 6 |
+| 文档 OpenAPI + README；父规格状态 | 任务 7 |
+| 无 step API / 无 WS / 仅已发布 / 无 M4–M5 | 全局约束 |
+| seq 服务端单调 | 不变（任务 3 事件） |
+| 集成测试不挂起 worker | 任务 5 |
 
-## Placeholder / consistency check
+## 占位符 / 一致性检查
 
-- Paths: `apps/control-plane` throughout (never `apps/api`)
+- 路径：全文使用 `apps/control-plane`（绝不用 `apps/api`）
 - IDs: `u_dev`, `ws_demo`, `p_demo` unchanged
-- Ports: control-plane `8787`, web `5173`, executor `8790`
-- Env: `EXECUTOR_URL`, `EXECUTOR_TOKEN`, `CALLBACK_BASE_URL`, `DATABASE_URL`
-- Pause kinds: `breakpoint | approval | input` only
+- 端口：控制面 `8787`，web `5173`，执行器 `8790`
+- 环境变量：`EXECUTOR_URL`, `EXECUTOR_TOKEN`, `CALLBACK_BASE_URL`, `DATABASE_URL`
+- 暂停种类：仅 `breakpoint | approval | input`
 - Signal API kinds: `approve | reject | input | resume`
 - DB signal kinds: `approval | input | resume`
-- No TBD/TODO steps; dynamic-BP race for first dispatch resolved via Breakpoint-node integration + Python unit for before-enter
-- `test:m2` must remain green after M3
+- 无 TBD/TODO 步骤；首次派发的动态断点竞态通过 Breakpoint 节点集成 + 进入前 Python 单元测试解决
+- M3 之后 `test:m2` 必须保持绿灯
 
-## Stretch (explicitly optional — skip unless ahead of schedule)
+## 延伸（明确可选 — 除非进度超前否则跳过）
 
-- Optional `breakpoints` on `POST .../test-runs` body to avoid DB helper for dynamic BP integration
-- Canvas glow for paused current node
-- Skip duplicate `run_started` on resume
+- 可选在 `POST .../test-runs` body 带 `breakpoints`，避免动态断点集成依赖 DB 辅助
+- 暂停当前节点的画布高亮
+- 恢复时跳过重复 `run_started`
 - SSE timeline push
 
 ---
 
-## Execution handoff
+## 执行交接
 
-After this plan is approved for execution, choose:
+本计划批准执行后，选择：
 
-1. **Subagent-Driven (recommended)** — fresh subagent per task, review between tasks  
-2. **Inline Execution** — execute in this session with checkpoints  
+1. **子代理驱动（推荐）** — 每任务新开子代理，任务间做评审
+2. **会话内执行** — 在本会话按检查点执行
 
-Start at Task 1. Do not implement M4+ items from this plan.
+从任务 1 开始。不要从本计划实现 M4+ 项。

@@ -1,52 +1,52 @@
-# M2 Python Executor + Test Run Timeline Implementation Plan
+# M2 Python 执行器 + 试跑时间线 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：** 必用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，按任务逐步实现本计划。步骤用复选框（`- [ ]`）跟踪。
 
-**Goal:** Deliver test-run execution of a published `flow_version` via a Python executor, persist `runs` / `run_events`, and show a Run Timeline in the web UI (node status, IO payloads, seq order, duration).
+**目标：** 通过 Python 执行器对已发布的 `flow_version` 做试跑，持久化 `runs` / `run_events`，并在 Web UI 展示运行时间线（节点状态、IO 载荷、seq 顺序、耗时）。
 
-**Architecture:** Control plane (Hono) creates a `runs` row for a **published** flow version, pushes an HTTP job to `apps/executor-py`, and receives HTTP callbacks that append `run_events` and update run status. Web polls run + events for the timeline (no WebSocket in M2). Shared Zod types live in `packages/run-protocol`. Graph remains language-agnostic JSON; secrets never appear in `graph_json` or executor job payloads beyond opaque refs (none required in M2).
+**架构：** 控制面（Hono）为**已发布**的 flow version 创建 `runs` 行，向 `apps/executor-py` 推送 HTTP 任务，并接收 HTTP 回调以追加 `run_events`、更新运行状态。Web 通过轮询 run + events 渲染时间线（M2 无 WebSocket）。共享 Zod 类型在 `packages/run-protocol`。图仍是语言无关 JSON；密钥不得出现在 `graph_json` 或执行器任务载荷中（除不透明引用；M2 不要求）。
 
-**Tech Stack:** Existing M1 stack (TypeScript, pnpm, Hono, Drizzle, PostgreSQL, Vite, React, XYFlow, Vitest, Zod) plus Python 3.11+ (`httpx` or stdlib `urllib`, `pytest`), FastAPI or plain `http.server` / Starlette for the executor receive endpoint.
+**技术栈：** 沿用 M1 技术栈（TypeScript、pnpm、Hono、Drizzle、PostgreSQL、Vite、React、XYFlow、Vitest、Zod），外加 Python 3.11+（`httpx` 或标准库 `urllib`、`pytest`）；执行器接收端可用 FastAPI，或普通 `http.server` / Starlette。
 
-**Spec:** `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (M2 = Python executor + test run + run_events timeline)
+**规格：** `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`（M2 = Python 执行器 + 试跑 + run_events 时间线）
 
-## Global Constraints
+## 全局约束
 
-- Product: 编排画布 + 运行时调试 — M2 ships **test run + timeline**; breakpoints/signals are M3
-- Deploy shape: 前后端分离；Runtime 单独服务 (`apps/executor-py`)
-- Auth: stub `X-User-Id` (unchanged); executor callbacks use shared secret header `X-Executor-Token` (env)
-- Graph is language-agnostic JSON; secrets never inside `graph_json`
-- **Only published** `flow_versions` may be test-run (aligns with immutable publish story). Draft dry-run is a stretch note only — do not implement
-- Do not change M1 publish immutability rules
-- Executor transport for M2: **HTTP push job + HTTP callback** (resolves open item; not gRPC)
-- Timeline delivery for M2: **HTTP poll** (`GET /runs/:id` + `GET /runs/:id/events?after_seq=N`); WS/SSE deferred (stretch note)
-- No real LLM API keys; optional `LLM` node is a fixed-text stub if encountered, otherwise M2 demo graphs avoid it
-- M2 executable node set: `Start`, `End`, `Transform` (SetState alias), `Branch` (simple expression), `Emit`. Unknown types → fail the node with a clear error event (or skip with failure edge if configured — prefer hard fail for honesty)
-- Seed/extend `node_defs` for `Transform` and `Emit` (and keep Start|End|Branch)
-- Dual personas / roles / assets / publish gate → M4; Subflow/templates/metrics → M5
+- 产品：编排画布 + 运行时调试 — M2 交付 **试跑 + 时间线**；断点/信号在 M3
+- 部署形态：前后端分离；Runtime 为独立服务（`apps/executor-py`）
+- 鉴权：桩 `X-User-Id`（不变）；执行器回调用共享密钥头 `X-Executor-Token`（环境变量）
+- 图是语言无关 JSON；密钥不得出现在 `graph_json` 内
+- **仅已发布**的 `flow_versions` 可试跑（与不可变发布一致）。草稿 dry-run 仅作延伸备注 — 不要实现
+- 不要改动 M1 发布不可变规则
+- M2 执行器传输：**HTTP 推送任务 + HTTP 回调**（了结开放项；不用 gRPC）
+- M2 时间线投递：**HTTP 轮询**（`GET /runs/:id` + `GET /runs/:id/events?after_seq=N`）；WS/SSE 推迟（延伸备注）
+- 无真实 LLM API key；若遇到可选 `LLM` 节点则用固定文本桩，否则 M2 演示图避开它
+- M2 可执行节点集：`Start`、`End`、`Transform`（SetState 别名）、`Branch`（简单表达式）、`Emit`。未知类型 → 节点失败并带清晰错误事件（或若配置了失败边则跳过 — 为诚实优先硬失败）
+- 为 `Transform` 与 `Emit` 种子/扩展 `node_defs`（并保留 Start|End|Branch）
+- 双人设 / 角色 / 资产 / 发布门禁 → M4；Subflow/模板/指标 → M5
 
-**Follow-up plans (do not implement in this plan):** M3 breakpoint/signal/human approval; M4 roles/assets/publish gate; M5 subflow/templates/metrics.
+**后续计划（本计划不要实现）：** M3 断点/信号/人工审批；M4 角色/资产/发布门禁；M5 子流程/模板/指标。
 
 ---
 
-## Key architecture decisions (locked for M2)
+## 关键架构决策（M2 已锁定）
 
-| Decision | Choice | Rationale |
+| 决策 | 选择 | 理由 |
 |---|---|---|
-| Transport | Control plane **POSTs** job to executor `/v1/jobs`; executor **POSTs** events/status to control plane `/internal/runs/:id/events` and `/internal/runs/:id/status` | Spec open item; simplest local demo; no gRPC deps |
-| Auth between services | `X-Executor-Token` shared secret (env `EXECUTOR_TOKEN`); internal routes skip `X-User-Id` | Stub-friendly; not a vault |
-| Timeline | Client polls every 500–1000ms while status is `queued\|running` | Avoid Redis/WS for M2; still matches use case 8 + 10 |
-| Test-run gate | Require `flow_versions.status === "published"` | Immutable publish story |
-| Node subset | Start, End, Transform, Branch, Emit (+ LLM stub optional) | Enough for demo path without HTTP/HumanApproval |
-| Branch expression | Restricted eval: `state.field == value` / truthy path lookup via `config.expression` or `config.path` + compare; **no** `eval()` of arbitrary Python | Safety |
-| Transform | `config.assignments: { key: value \| { "$ref": "state.x" } }` merged into run state | Minimal SetState |
-| Emit | Append `emit` event with `config.message` / payload; does not change control flow | Timeline visibility |
-| Cancel | Optional `POST /runs/:id/cancel` sets status `cancel_requested`; executor checks between nodes | Nice-to-have; implement if time after happy path |
-| Package layout | `packages/run-protocol` (TS Zod); `apps/executor-py` (Python, own `pyproject.toml`, not a pnpm package) | Matches monorepo; pnpm ignores dirs without `package.json` |
+| 传输 | 控制面向执行器 `/v1/jobs` **POST** 任务；执行器向控制面 `/internal/runs/:id/events` 与 `/internal/runs/:id/status` **POST** 事件/状态 | 规格开放项；本地演示最简；无 gRPC 依赖 |
+| 服务间鉴权 | `X-Executor-Token` 共享密钥（环境变量 `EXECUTOR_TOKEN`）；内部路由跳过 `X-User-Id` | 对桩友好；不是保险库 |
+| 时间线 | 状态为 `queued\|running` 时客户端每 500–1000ms 轮询 | M2 避免 Redis/WS；仍满足用例 8 + 10 |
+| 试跑门禁 | 要求 `flow_versions.status === "published"` | 不可变发布叙事 |
+| 节点子集 | Start、End、Transform、Branch、Emit（+ 可选 LLM 桩） | 足以演示路径，无需 HTTP/HumanApproval |
+| Branch 表达式 | 受限求值：`state.field == value` / 经 `config.expression` 或 `config.path` + 比较做真值路径查找；**禁止**对任意 Python 做 `eval()` | 安全 |
+| Transform | `config.assignments: { key: value \| { "$ref": "state.x" } }` 合并进 run state | 最小 SetState |
+| Emit | 追加带 `config.message` / 载荷的 `emit` 事件；不改变控制流 | 时间线可见性 |
+| 取消 | 可选 `POST /runs/:id/cancel` 将状态设为 `cancel_requested`；执行器在节点间检查 | 锦上添花；快乐路径后再做 |
+| 包布局 | `packages/run-protocol`（TS Zod）；`apps/executor-py`（Python，自有 `pyproject.toml`，不是 pnpm 包） | 贴合 monorepo；pnpm 忽略无 `package.json` 的目录 |
 
 ---
 
-## File map (create / modify in M2)
+## 文件地图（M2 创建/修改）
 
 ```
 agent-workflow-orchestrator/
@@ -98,14 +98,14 @@ agent-workflow-orchestrator/
 
 ---
 
-### Task 1: `@awo/run-protocol` — Zod run + event types
+### 任务 1：`@awo/run-protocol` — Zod run + 事件类型
 
-**Files:**
-- Create: `packages/run-protocol/package.json`, `packages/run-protocol/src/run.ts`, `packages/run-protocol/src/index.ts`, `packages/run-protocol/src/run.test.ts`
-- Modify: root `pnpm-workspace.yaml` already covers `packages/*`
+**文件：**
+- 创建：`packages/run-protocol/package.json`, `packages/run-protocol/src/run.ts`, `packages/run-protocol/src/index.ts`, `packages/run-protocol/src/run.test.ts`
+- 修改：根 `pnpm-workspace.yaml` 已覆盖 `packages/*`
 
-**Interfaces:**
-- Consumes: none (standalone Zod)
+**接口：**
+- 消费：无（独立 Zod）
 - Produces:
   - `RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "cancel_requested"`
   - `RunEventType = "run_started" | "run_finished" | "node_started" | "node_finished" | "node_failed" | "emit" | "log"`
@@ -113,7 +113,7 @@ agent-workflow-orchestrator/
   - `CallbackEventBody`: `{ seq?, node_id?, event_type, payload, ts? }`
   - `parseJobPayload`, `parseCallbackEvent`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -152,19 +152,19 @@ describe("run-protocol", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests — expect FAIL**
+- [ ] **步骤 2：跑测试 — 预期失败**
 
 ```bash
 pnpm --filter @awo/run-protocol test
 ```
 
-- [ ] **Step 3: Implement Zod schemas**
+- [ ] **步骤 3：实现 Zod schema**
 
-Keep graph shape as `z.record(z.unknown())` or import `FlowGraphSchema` from `@awo/graph-schema` (prefer dependency on `@awo/graph-schema` for one source of truth).
+图结构可用 `z.record(z.unknown())`，或从 `@awo/graph-schema` 导入 `FlowGraphSchema`（优先依赖 `@awo/graph-schema` 作为单一真相来源）。
 
-- [ ] **Step 4: Run tests — expect PASS**
+- [ ] **步骤 4：跑测试 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add packages/run-protocol
@@ -173,21 +173,21 @@ git commit -m "feat(run-protocol): add Zod types for jobs and run events"
 
 ---
 
-### Task 2: DB — `runs` + `run_events` + seed Transform/Emit
+### 任务 2：DB — `runs` + `run_events` + 种子 Transform/Emit
 
-**Files:**
-- Modify: `apps/control-plane/src/db/schema.ts`, `apps/control-plane/src/db/seed.ts`
-- Create: `apps/control-plane/drizzle/0002_runs.sql` (or generate via drizzle-kit)
-- Test: extend `apps/control-plane/tests/db-seed.test.ts` or add `tests/runs-schema.test.ts`
+**文件：**
+- 修改：`apps/control-plane/src/db/schema.ts`, `apps/control-plane/src/db/seed.ts`
+- 创建：`apps/control-plane/drizzle/0002_runs.sql`（或用 drizzle-kit 生成）
+- 测试：extend `apps/control-plane/tests/db-seed.test.ts` or add `tests/runs-schema.test.ts`
 
-**Interfaces:**
-- Consumes: existing Drizzle client
-- Produces tables matching spec E-R:
+**接口：**
+- 消费：现有 Drizzle client
+- 产出与规格 E-R 对齐的表：
 
 `runs`:
 - `id` text PK
 - `flowVersionId` text not null
-- `trigger` text not null (`test` | `prod` | `api`) — M2 only uses `test`
+- `trigger` text 非空（`test` | `prod` | `api`）— M2 只用 `test`
 - `status` text not null
 - `inputJson` jsonb not null
 - `outputJson` jsonb nullable
@@ -208,22 +208,22 @@ git commit -m "feat(run-protocol): add Zod types for jobs and run events"
 - `ts` timestamptz not null default now()
 - unique `(runId, seq)`
 
-Seed: add `Transform`, `Emit` to `node_defs` (uiMeta rounded blue; category `data` / `debug`).
+种子：向 `node_defs` 添加 `Transform`、`Emit`（uiMeta 圆角蓝；category `data` / `debug`）。
 
-- [ ] **Step 1: Write failing seed/schema test** asserting `Transform` and `Emit` exist after seed; optionally insert a run row in a transaction and roll back
+- [ ] **步骤 1：编写会失败的种子/schema 测试**，断言种子后存在 `Transform` 与 `Emit`；可选在事务中插入 run 行再回滚
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
-- [ ] **Step 3: Add Drizzle tables + migration + seed entries**
+- [ ] **步骤 3：添加 Drizzle 表 + 迁移 + 种子条目**
 
 ```bash
 pnpm --filter @awo/control-plane db:migrate
 pnpm --filter @awo/control-plane db:seed
 ```
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/control-plane/src/db apps/control-plane/drizzle
@@ -232,31 +232,31 @@ git commit -m "feat(control-plane): add runs and run_events tables"
 
 ---
 
-### Task 3: Control-plane run service + user APIs
+### 任务 3：控制面 run 服务 + 用户 API
 
-**Files:**
-- Create: `apps/control-plane/src/services/run-service.ts`, `apps/control-plane/src/routes/runs.ts`
-- Modify: `apps/control-plane/src/index.ts` (mount routes; allow `DELETE`/`POST` cancel in CORS if needed)
-- Test: `apps/control-plane/tests/runs.test.ts`
-- Deps: `@awo/run-protocol`
+**文件：**
+- 创建：`apps/control-plane/src/services/run-service.ts`, `apps/control-plane/src/routes/runs.ts`
+- 修改：`apps/control-plane/src/index.ts`（挂载路由；必要时在 CORS 允许 `DELETE`/`POST` cancel）
+- 测试：`apps/control-plane/tests/runs.test.ts`
+- 依赖：`@awo/run-protocol`
 
-**Interfaces:**
-- Consumes: `flow_versions` (published only), auth workspace check via existing project/flow ownership pattern
-- Produces HTTP (user-facing, `X-User-Id`):
-  - `POST /flows/:flowId/test-runs` body `{ input: object }` → creates run on **published** version; returns `{ id, status, flowVersionId }`; status starts `queued`
-  - `GET /runs/:runId` → run metadata
-  - `GET /flows/:flowId/runs` → recent runs (limit 20)
-  - `GET /runs/:runId/events?after_seq=0` → `{ events: [...] }` ordered by `seq` ascending
-  - `POST /runs/:runId/cancel` → optional; sets `cancel_requested` if `queued|running`
+**接口：**
+- 消费：`flow_versions`（仅已发布），经现有 project/flow 归属模式做工作区鉴权
+- 产出 HTTP（面向用户，`X-User-Id`）：
+  - `POST /flows/:flowId/test-runs` body `{ input: object }` → 在**已发布**版本上创建 run；返回 `{ id, status, flowVersionId }`；状态从 `queued` 开始
+  - `GET /runs/:runId` → run 元数据
+  - `GET /flows/:flowId/runs` → 最近 runs（limit 20）
+  - `GET /runs/:runId/events?after_seq=0` → 按 `seq` 升序的 `{ events: [...] }`
+  - `POST /runs/:runId/cancel` → 可选；若为 `queued|running` 则设为 `cancel_requested`
 
 Rules:
-1. Resolve flow in workspace; require `publishedVersionId`
-2. Load published `flow_versions` row; reject `400` if missing or not `published`
-3. Insert `runs` with `trigger=test`, `status=queued`, `inputJson`
-4. Audit `run.test_create`
-5. **Do not** call executor yet in this task — leave a `dispatchJob(runId)` hook / TODO called from Task 4 so tests can create runs without a live executor (or mock the client)
+1. 在工作区解析 flow；要求有 `publishedVersionId`
+2. 加载已发布 `flow_versions` 行；缺失或非 `published` 则 `400`
+3. 插入 `runs`，`trigger=test`、`status=queued`、`inputJson`
+4. 审计 `run.test_create`
+5. 本任务尚**不要**调用执行器 — 留 `dispatchJob(runId)` 钩子/TODO 由任务 4 调用，以便测试可在无真实执行器时创建 runs（或 mock 客户端）
 
-- [ ] **Step 1: Write failing API tests** (Hono `app.request`)
+- [ ] **步骤 1：编写会失败的 API 测试**（Hono `app.request`）
 
 ```ts
 it("creates test run only against published version", async () => {
@@ -287,13 +287,13 @@ it("rejects test run when nothing published", async () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
-- [ ] **Step 3: Implement run-service + routes** (dispatch stubbed/no-op)
+- [ ] **步骤 3：实现 run-service + 路由**（派发为桩/空操作）
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(control-plane): test-run CRUD and run_events list APIs"
@@ -301,35 +301,35 @@ git commit -m "feat(control-plane): test-run CRUD and run_events list APIs"
 
 ---
 
-### Task 4: Executor push client + internal callback routes
+### 任务 4：执行器推送客户端 + 内部回调路由
 
-**Files:**
-- Create: `apps/control-plane/src/services/executor-client.ts`, `apps/control-plane/src/middleware/executor-auth.ts`, `apps/control-plane/src/routes/internal-runs.ts`
-- Modify: `apps/control-plane/src/services/run-service.ts` (call `dispatchJob` after insert), `apps/control-plane/src/index.ts`
-- Test: `apps/control-plane/tests/executor-callback.test.ts`
-- Env: `EXECUTOR_URL` (default `http://127.0.0.1:8790`), `EXECUTOR_TOKEN`, `CALLBACK_BASE_URL` (default `http://127.0.0.1:8787`)
+**文件：**
+- 创建：`apps/control-plane/src/services/executor-client.ts`, `apps/control-plane/src/middleware/executor-auth.ts`, `apps/control-plane/src/routes/internal-runs.ts`
+- 修改：`apps/control-plane/src/services/run-service.ts`（插入后调用 `dispatchJob`）、`apps/control-plane/src/index.ts`
+- 测试：`apps/control-plane/tests/executor-callback.test.ts`
+- 环境变量：`EXECUTOR_URL`（默认 `http://127.0.0.1:8790`）、`EXECUTOR_TOKEN`、`CALLBACK_BASE_URL`（默认 `http://127.0.0.1:8787`）
 
-**Interfaces:**
-- Consumes: `JobPayload` from `@awo/run-protocol`
+**接口：**
+- 消费：`JobPayload` from `@awo/run-protocol`
 - Produces:
-  - `dispatchJob(run)` → `POST ${EXECUTOR_URL}/v1/jobs` with job JSON; on network failure mark run `failed` + error event
-  - Internal (header `X-Executor-Token`):
-    - `POST /internal/runs/:runId/events` body callback event → assign next `seq`, insert `run_events`
-    - `POST /internal/runs/:runId/status` body `{ status, output?, error_message? }` → update `runs`; set `startedAt`/`finishedAt` appropriately
-  - Skip user `authMiddleware` for `/internal/*`; use `executorAuthMiddleware` instead
-  - Seq allocation: transactional `max(seq)+1` per run (or counter on `runs` — prefer `max+1` in tx for M2 simplicity)
+  - `dispatchJob(run)` → 向 `${EXECUTOR_URL}/v1/jobs` POST job JSON；网络失败则标记 run `failed` + 错误事件
+  - 内部（请求头 `X-Executor-Token`）：
+    - `POST /internal/runs/:runId/events` body 回调事件 → 分配下一个 `seq`，插入 `run_events`
+    - `POST /internal/runs/:runId/status` body `{ status, output?, error_message? }` → 更新 `runs`；适当设置 `startedAt`/`finishedAt`
+  - `/internal/*` 跳过用户 `authMiddleware`；改用 `executorAuthMiddleware`
+  - seq 分配：每 run 事务内 `max(seq)+1`（或 `runs` 上计数器 — M2 为简单优先事务内 `max+1`）
 
-- [ ] **Step 1: Write failing callback tests** with forged token rejected; valid token appends seq 1,2,… and status transitions `queued → running → succeeded`
+- [ ] **步骤 1：编写会失败的回调测试**，伪造 token 被拒；合法 token 追加 seq 1,2,…，状态转换 `queued → running → succeeded`
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
-- [ ] **Step 3: Implement middleware, routes, executor-client (fetch); wire dispatch after create**
+- [ ] **步骤 3：实现中间件、路由、executor-client（fetch）；创建后接入派发**
 
-For unit tests without a live executor: inject `executorClient` or set `EXECUTOR_URL` to a mock; primary unit tests hit callbacks directly and mock `fetch` for dispatch.
+无真实执行器的单元测试：注入 `executorClient` 或把 `EXECUTOR_URL` 设为 mock；主单元测试直接打回调，并对派发 mock `fetch`。
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(control-plane): HTTP job dispatch and executor callbacks"
@@ -337,62 +337,62 @@ git commit -m "feat(control-plane): HTTP job dispatch and executor callbacks"
 
 ---
 
-### Task 5: Python executor package — engine + nodes
+### 任务 5：Python 执行器包 — engine + nodes
 
-**Files:**
-- Create: entire `apps/executor-py/` tree listed in file map
-- Test: `apps/executor-py/tests/test_engine.py`, `test_nodes.py`
-- Fixture graph: Start → Transform (set `state.ok = true`) → Branch (`state.ok == true`) → Emit → End (success path); failure path End optional
+**文件：**
+- 创建：文件地图中列出的整个 `apps/executor-py/` 树
+- 测试：`apps/executor-py/tests/test_engine.py`, `test_nodes.py`
+- Fixture 图：Start → Transform（设 `state.ok = true`）→ Branch（`state.ok == true`）→ Emit → End（成功路径）；失败路径 End 可选
 
-**Interfaces:**
-- Consumes: JobPayload JSON
-- Produces: ordered callbacks:
+**接口：**
+- 消费：JobPayload JSON
+- 产出：有序回调：
   1. status `running`
   2. `run_started`
-  3. per node: `node_started` → work → `node_finished` or `node_failed` (payload includes `input` snapshot, `output`, `duration_ms`)
-  4. `Emit` also sends `event_type: "emit"`
-  5. status `succeeded` or `failed` with `output` / `error_message`
-- HTTP: `GET /health` → `{ ok: true }`; `POST /v1/jobs` → `202` immediately, execute in background thread/asyncio task
-- Verify `Authorization`/`X-Executor-Token` matches job token or server env
+  3. 每节点：`node_started` → 工作 → `node_finished` 或 `node_failed`（载荷含 `input` 快照、`output`、`duration_ms`）
+  4. `Emit` 还发送 `event_type: "emit"`
+  5. 状态 `succeeded` 或 `failed`，带 `output` / `error_message`
+- HTTP：`GET /health` → `{ ok: true }`；`POST /v1/jobs` → 立即 `202`，在后台线程/asyncio 任务中执行
+- 校验 `Authorization`/`X-Executor-Token` 与 job token 或服务端环境变量一致
 
 Node semantics:
 
 | Type | Behavior |
 |---|---|
-| `Start` | Copy job `input` into `state`; output = state |
-| `Transform` | Apply `config.assignments` into state |
-| `Branch` | Evaluate expression; choose outgoing edge `kind=success` if true else `failure`; if missing edge, fail |
-| `Emit` | Emit event with message; follow `default`/`success` out |
-| `End` | Mark terminal; run output = state |
-| `LLM` (optional stub) | Set `state.llm_text = config.stub_text \|\| "stub"` — no network |
-| other | `node_failed` with `unsupported_node_type` |
+| `Start` | 把 job `input` 拷入 `state`；output = state |
+| `Transform` | 把 `config.assignments` 应用到 state |
+| `Branch` | 求值表达式；真则选 `kind=success` 出边，否则 `failure`；缺边则失败 |
+| `Emit` | 发出带消息的事件；沿 `default`/`success` 出边 |
+| `End` | 标记终态；run output = state |
+| `LLM`（可选桩） | 设 `state.llm_text = config.stub_text \|\| "stub"` — 无网络 |
+| 其他 | 带 `unsupported_node_type` 的 `node_failed` |
 
-Expression safety (`expressions.py`): allow only:
-- `state.<ident>` path reads
+表达式安全（`expressions.py`）：仅允许：
+- `state.<ident>` 路径读取
 - comparisons `==`, `!=`, `>`, `<`, `>=`, `<=`
-- boolean literals / `and`/`or`/`not` with parentheses
-- Reject attribute access beyond `state`, calls, imports, subscripts with expressions other than string/int literals if needed
+- 布尔字面量 / 带括号的 `and`/`or`/`not`
+- 拒绝超出 `state` 的属性访问、调用、导入，以及非字符串/整数字面量的下标表达式（按需）
 
-- [ ] **Step 1: Write failing pytest for fixture graph happy path** (mock callback client collecting events)
+- [ ] **步骤 1：为 fixture 图编写会失败的 pytest 快乐路径**（mock 回调客户端收集事件）
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
 ```bash
 cd apps/executor-py && python -m pytest
 ```
 
-- [ ] **Step 3: Implement nodes + engine + callback client + main HTTP server**
+- [ ] **步骤 3：实现 nodes + engine + 回调客户端 + 主 HTTP 服务**
 
-Prefer FastAPI + uvicorn if already comfortable; otherwise Starlette or stdlib is fine. Document start command in package README:
+若已熟悉优先 FastAPI + uvicorn；否则 Starlette 或标准库亦可。在包 README 写明启动命令：
 
 ```bash
 EXECUTOR_TOKEN=dev CALLBACK_BASE_URL=http://127.0.0.1:8787 \
   uvicorn awo_executor.main:app --port 8790
 ```
 
-- [ ] **Step 4: Run pytest — expect PASS**
+- [ ] **步骤 4：跑 pytest — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/executor-py
@@ -401,39 +401,39 @@ git commit -m "feat(executor-py): minimal graph engine and HTTP job server"
 
 ---
 
-### Task 6: Integration test — control-plane + executor happy path
+### 任务 6：集成测试 — 控制面 + 执行器快乐路径
 
-**Files:**
-- Create: `apps/control-plane/tests/m2-integration.test.ts` (or `scripts/m2-smoke.sh` + vitest)
-- Modify: root `package.json` scripts `"test:m2": "..."` 
+**文件：**
+- 创建：`apps/control-plane/tests/m2-integration.test.ts` (or `scripts/m2-smoke.sh` + vitest)
+- 修改：根 `package.json` scripts `"test:m2": "..."`
 
-**Interfaces:**
-- Consumes: live Postgres, control-plane `app`, executor process (spawn or assume `EXECUTOR_URL`)
-- Produces: one automated happy path **without real LLM**
+**接口：**
+- 消费：真实 Postgres、控制面 `app`、执行器进程（spawn 或假定 `EXECUTOR_URL`）
+- 产出：一条自动化快乐路径（**无真实 LLM**）
 
-Recommended approach (reliable in CI):
-1. Start executor in-process via child_process in `beforeAll`, or use pure Python pytest that POSTs into a test double
-2. Prefer **Vitest integration** that:
-   - Uses Hono app + real DB
-   - Mocks outbound `fetch` to executor by **invoking the Python engine synchronously** via `python -c` OR starts uvicorn on ephemeral port
-3. Minimum bar if process spawn is flaky: control-plane callback unit tests (Task 4) + Python engine tests (Task 5) + a documented manual smoke; still add one integration test that drives callbacks as the executor would (synthetic) **and** one Python test that posts to a mock HTTP callback server (`http.server`)
+推荐做法（CI 可靠）：
+1. 在 `beforeAll` 用 child_process 进程内启动执行器，或用纯 Python pytest POST 到测试替身
+2. 优先 **Vitest 集成**，要求：
+   - 使用 Hono app + 真实 DB
+   - 对执行器出站 `fetch` 做 mock：经 `python -c` **同步调用 Python engine**，或在临时端口启动 uvicorn
+3. 若进程 spawn 不稳，最低标准：控制面回调单元测试（任务 4）+ Python engine 测试（任务 5）+ 有文档的手工冒烟；仍需一条按执行器方式驱动回调的集成测试（合成）**以及**一条向 mock HTTP 回调服务器（`http.server`）POST 的 Python 测试
 
-**Required assertion path:**
-1. Publish graph (Start→Transform→Branch→Emit→End)
-2. `POST test-runs` with `{ input: { flag: true } }`
-3. Wait until run `succeeded` (poll or await executor)
-4. Events contain increasing `seq`, include `node_finished` for each node, one `emit`, final status succeeded
-5. `output_json` reflects transformed state
+**必需断言路径：**
+1. 发布图（Start→Transform→Branch→Emit→End）
+2. `POST test-runs`，body `{ input: { flag: true } }`
+3. 等到 run `succeeded`（轮询或 await 执行器）
+4. 事件含递增 `seq`，每个节点有 `node_finished`，一个 `emit`，最终状态 succeeded
+5. `output_json` 反映变换后的 state
 
-- [ ] **Step 1: Write failing integration test**
+- [ ] **步骤 1：编写会失败的集成测试**
 
-- [ ] **Step 2: Run — expect FAIL** (until executor wired)
+- [ ] **步骤 2：运行 — 预期失败**（直到执行器接好）
 
-- [ ] **Step 3: Fix wiring / flake (timeouts, token env)**
+- [ ] **步骤 3：修复接线 / 不稳定（超时、token 环境变量）**
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "test: M2 control-plane + executor happy path"
@@ -441,20 +441,20 @@ git commit -m "test: M2 control-plane + executor happy path"
 
 ---
 
-### Task 7: Web — Test Run panel + Run Timeline
+### 任务 7：Web — 试跑面板 + 运行时间线
 
-**Files:**
-- Create: `apps/web/src/run/TestRunPanel.tsx`, `RunTimeline.tsx`, `useRunPoll.ts`, `styles/run.css`, `sample-m2-graph.ts`
-- Modify: `apps/web/src/api/client.ts`, `apps/web/src/App.tsx`
-- Test: `apps/web/src/api/runs.test.ts`, optional `useRunPoll` pure helper test
+**文件：**
+- 创建：`apps/web/src/run/TestRunPanel.tsx`, `RunTimeline.tsx`, `useRunPoll.ts`, `styles/run.css`, `sample-m2-graph.ts`
+- 修改：`apps/web/src/api/client.ts`, `apps/web/src/App.tsx`
+- 测试：`apps/web/src/api/runs.test.ts`, optional `useRunPoll` pure helper test
 
-**Interfaces:**
-- Consumes: Task 3 HTTP APIs
+**接口：**
+- 消费：任务 3 的 HTTP API
 - Produces UI:
-  - **Test Run panel** (side or bottom): JSON input textarea (default `{"question":"demo"}`), **试运行** button enabled only when `publishedVersionId` set; shows run id + status badge
-  - **Run Timeline**: list events by `seq`; each row shows time, node id/type if known, event type, duration from payload, expandable IO JSON
-  - Optional: highlight XYFlow node by `data-status` from latest events (nice-to-have; implement if panel done early)
-  - Poll every 750ms while status in `queued|running|cancel_requested`; stop on terminal
+  - **试跑面板**（侧边或底部）：JSON 输入框（默认 `{"question":"demo"}`），仅当有 `publishedVersionId` 时启用 **试运行** 按钮；显示 run id + 状态徽章
+  - **运行时间线**：按 `seq` 列事件；每行显示时间、已知的节点 id/类型、事件类型、载荷耗时、可展开 IO JSON
+  - 可选：按最新事件的 `data-status` 高亮 XYFlow 节点（锦上添花；面板提前完成再做）
+  - 状态为 `queued|running|cancel_requested` 时每 750ms 轮询；终态停止
 
 `client.ts` additions:
 
@@ -466,16 +466,16 @@ cancelRun(runId: string) // optional
 ```
 
 Wire App:
-- After publish success, panel unlocks
-- Provide button to load `sample-m2-graph` into canvas for demo (or replace create-flow seed)
+- 发布成功后面板解锁
+- 提供按钮把 `sample-m2-graph` 载入画布演示（或替换建流种子）
 
-- [ ] **Step 1: Write client mock-fetch tests for createTestRun / listRunEvents**
+- [ ] **步骤 1：为 createTestRun / listRunEvents 编写客户端 mock-fetch 测试**
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
-- [ ] **Step 3: Implement client + panel + timeline + CSS (light blue/white consistent with canvas)**
+- [ ] **步骤 3：实现 client + 面板 + 时间线 + CSS（浅蓝/白，与画布一致）**
 
-- [ ] **Step 4: Run unit tests — PASS; manual smoke:**
+- [ ] **步骤 4：跑单元测试 — 通过；手工冒烟：**
 
 ```bash
 pnpm db:up
@@ -488,12 +488,12 @@ pnpm --filter @awo/web dev
 ```
 
 Checklist:
-1. Create/open flow → paste/load M2 sample → Save → Publish
-2. 试运行 with sample input
-3. Timeline fills in order; statuses flip to succeeded
-4. Refresh events via poll without duplicate rows (`after_seq`)
+1. 创建/打开 flow → 粘贴/加载 M2 样例 → 保存 → 发布
+2. 用样例输入试运行
+3. 时间线按序填充；状态翻转为 succeeded
+4. 经轮询刷新事件且无重复行（`after_seq`）
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(web): test run panel and run timeline UI"
@@ -501,23 +501,23 @@ git commit -m "feat(web): test run panel and run timeline UI"
 
 ---
 
-### Task 8: Docs — OpenAPI sketch, README, spec status
+### 任务 8：文档 — OpenAPI 草图、README、规格状态
 
-**Files:**
-- Create: `docs/run-protocol-openapi.md` (sketch paths from Tasks 3–4 + executor `/v1/jobs`)
-- Modify: `README.md` (M2 section: how to run executor + test run)
-- Modify: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` Status line to include M2 plan path
-- Modify: spec §12 open item “First executor transport” → resolved as HTTP callback for M2
+**文件：**
+- 创建：`docs/run-protocol-openapi.md`（草图路径来自任务 3–4 + 执行器 `/v1/jobs`）
+- 修改：`README.md`（M2 节：如何跑执行器 + 试跑）
+- 修改：`docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` Status 行包含 M2 计划路径
+- 修改：规格 §12 开放项「首个执行器传输」→ M2 定为 HTTP 回调
 
-- [ ] **Step 1: Update design spec Status**
+- [ ] **步骤 1：更新设计规格 Status**
 
 ```
 - Status: approved; M1 plan in `docs/superpowers/plans/2026-10-21-m1-graph-canvas-control-plane.md`; M2 plan in `docs/superpowers/plans/2026-10-21-m2-python-executor-test-run-timeline.md`
 ```
 
-- [ ] **Step 2: Write OpenAPI sketch + README M2 acceptance checklist**
+- [ ] **步骤 2：编写 OpenAPI 草图 + README M2 验收清单**
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git commit -m "docs: M2 run protocol sketch and README acceptance"
@@ -525,47 +525,47 @@ git commit -m "docs: M2 run protocol sketch and README acceptance"
 
 ---
 
-## Spec coverage (self-review)
+## 规格覆盖（自检）
 
-| Spec item | Plan task |
+| 规格项 | 计划任务 |
 |---|---|
-| M2 Python executor + test run + run_events timeline | Tasks 1–8 |
-| E-R `runs` / `run_events` | Task 2 |
-| Run API create / cancel | Task 3 |
-| Executor HTTP push + event callbacks | Tasks 4–5 |
-| Canvas trigger试运行 + timeline | Task 7 |
-| Graph JSON language-agnostic | unchanged; job embeds published graph |
-| HTTP vs gRPC open item | Locked HTTP in this plan |
-| Breakpoints / signals / HumanApproval | Out of scope → M3 |
-| Roles / assets / publish gate | Out of scope → M4 |
-| Subflow / templates / metrics | Out of scope → M5 |
-| Real LLM / secrets vault | Out of scope |
-| Draft test-run | Explicitly deferred (stretch only) |
-| WS timeline push | Deferred; poll in M2 |
+| M2 Python 执行器 + 试跑 + run_events 时间线 | 任务 1–8 |
+| E-R `runs` / `run_events` | 任务 2 |
+| Run API 创建 / 取消 | 任务 3 |
+| 执行器 HTTP 推送 + 事件回调 | 任务 4–5 |
+| 画布触发试运行 + 时间线 | 任务 7 |
+| 图 JSON 语言无关 | 不变；任务嵌入已发布图 |
+| HTTP vs gRPC 开放项 | 本计划锁定为 HTTP |
+| 断点 / 信号 / HumanApproval | 超出范围 → M3 |
+| 角色 / 资产 / 发布门禁 | 超出范围 → M4 |
+| 子流程 / 模板 / 指标 | 超出范围 → M5 |
+| 真实 LLM / 密钥保险库 | 超出范围 |
+| 草稿试跑 | 明确推迟（仅延伸） |
+| WS 时间线推送 | 推迟；M2 用轮询 |
 
-## Placeholder / consistency check
+## 占位符 / 一致性检查
 
-- IDs: `u_dev`, `p_demo`, `ws_demo` unchanged
-- Ports: control-plane `8787`, web `5173`, executor `8790`
-- Env: `EXECUTOR_URL`, `EXECUTOR_TOKEN`, `CALLBACK_BASE_URL`, `DATABASE_URL`, `X-User-Id`
-- Event `seq` monotonic per `run_id` starting at 1
-- No TBD steps; cancel is optional but API shape specified
-- M2 sample graph must not require HTTP/HumanApproval nodes for the happy-path demo
+- ID：`u_dev`、`p_demo`、`ws_demo` 不变
+- 端口：控制面 `8787`，web `5173`，执行器 `8790`
+- 环境变量：`EXECUTOR_URL`、`EXECUTOR_TOKEN`、`CALLBACK_BASE_URL`、`DATABASE_URL`、`X-User-Id`
+- 每个 `run_id` 的事件 `seq` 从 1 起单调递增
+- 无残留 TBD 步骤；cancel 可选但 API 形态已定
+- M2 样例图快乐路径演示不得依赖 HTTP/HumanApproval 节点
 
-## Stretch (explicitly optional — skip unless ahead of schedule)
+## 延伸（明确可选 — 除非进度超前否则跳过）
 
-- SSE endpoint `GET /runs/:id/stream` as alternative to poll
-- Canvas node glow by live status
-- Draft dry-run that never marks `trigger=prod` and stamps `draft_version_id` (still prefer published-only)
-- `POST /runs/:id/cancel` honored mid-flight in executor
+- SSE 端点 `GET /runs/:id/stream` 作为轮询替代
+- 按实时状态高亮画布节点
+- 草稿 dry-run：永不标 `trigger=prod`，并盖 `draft_version_id`（仍优先仅已发布）
+- 执行器飞行中遵守 `POST /runs/:id/cancel`
 
 ---
 
-## Execution handoff
+## 执行交接
 
-After this plan is approved for execution, choose:
+本计划批准执行后，选择：
 
-1. **Subagent-Driven (recommended)** — fresh subagent per task, review between tasks
-2. **Inline Execution** — execute in this session with checkpoints
+1. **子代理驱动（推荐）** — 每任务新开子代理，任务间做评审
+2. **会话内执行** — 在本会话按检查点执行
 
-Start at Task 1. Do not implement M3+ items from this plan.
+从任务 1 开始。不要从本计划实现 M3+ 项。

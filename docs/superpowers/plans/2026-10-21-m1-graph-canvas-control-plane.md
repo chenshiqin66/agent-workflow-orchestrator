@@ -1,33 +1,33 @@
-# M1 Graph Canvas + Control Plane Implementation Plan
+# M1 图编排画布 + 控制面 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：** 必用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，按任务逐步实现本计划。步骤用复选框（`- [ ]`）跟踪。
 
-**Goal:** Deliver a working monorepo where a user can create a flow, edit a draft graph on a styled XYFlow canvas, persist versions, and publish an immutable `flow_version`.
+**目标：** 交付可运行的 monorepo：用户可创建流程、在带样式的 XYFlow 画布上编辑草稿图、持久化版本，并发布不可变的 `flow_version`。
 
-**Architecture:** pnpm monorepo with `packages/graph-schema` (shared Zod/JSON Schema), `apps/control-plane` (Hono + Drizzle + PostgreSQL), and `apps/web` (Vite + React + XYFlow). M1 has no executor; publish only freezes `graph_json`. Auth is a stub (`X-User-Id` + seeded membership) until M4.
+**架构：** pnpm monorepo，含 `packages/graph-schema`（共享 Zod/JSON Schema）、`apps/control-plane`（Hono + Drizzle + PostgreSQL）与 `apps/web`（Vite + React + XYFlow）。M1 无执行器；发布只冻结 `graph_json`。鉴权为桩（`X-User-Id` + 种子 membership），直到 M4。
 
-**Tech Stack:** TypeScript 5.x, pnpm workspaces, Vite, React 18, `@xyflow/react`, Hono, Drizzle ORM, PostgreSQL 16, Vitest, Zod.
+**技术栈：** TypeScript 5.x、pnpm workspaces、Vite、React 18、`@xyflow/react`、Hono、Drizzle ORM、PostgreSQL 16、Vitest、Zod。
 
-**Spec:** `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`
+**规格：** `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`
 
-## Global Constraints
+## 全局约束
 
-- Product: 编排画布 + 运行时调试（runtime execution starts in M2, not M1）
-- Deploy shape: 前后端分离；M1 ships `apps/web` + `apps/control-plane` only
-- Dual personas later: `admin` | `developer` | `builder` | `viewer` — M1 seeds one developer user
-- Graph is language-agnostic JSON; secrets never appear inside `graph_json`
-- Published `flow_versions` are immutable; edits create/update draft only
-- UI style: light blue/white; rounded nodes with left icon; port dots; success edges blue; failure edges red/orange; edge labels; diamond for decision (`Branch`)
-- DB: PostgreSQL
-- Monorepo: pnpm
-- Auth M1: stub header `X-User-Id` (no OIDC yet)
-- Executor transport: deferred to M2 (HTTP callback)
+- 产品：编排画布 + 运行时调试（运行时执行从 M2 开始，不在 M1）
+- 部署形态：前后端分离；M1 只交付 `apps/web` + `apps/control-plane`
+- 后续双人设：`admin` | `developer` | `builder` | `viewer` — M1 只种子一个 developer 用户
+- 图是语言无关 JSON；密钥不得出现在 `graph_json` 内
+- 已发布的 `flow_versions` 不可变；编辑只创建/更新草稿
+- UI 风格：浅蓝/白；圆角节点左侧图标；端口圆点；成功边蓝色；失败边红/橙；边标签；决策用菱形（`Branch`）
+- 数据库：PostgreSQL
+- Monorepo：pnpm
+- 鉴权 M1：桩请求头 `X-User-Id`（尚无 OIDC）
+- 执行器传输：推迟到 M2（HTTP 回调）
 
-**Follow-up plans (do not implement in this plan):** M2 executor + test run timeline; M3 breakpoint/signal; M4 roles/assets/publish gate; M5 subflow/templates/metrics.
+**后续计划（本计划不要实现）：** M2 执行器 + 试跑时间线；M3 断点/信号；M4 角色/资产/发布门禁；M5 子流程/模板/指标。
 
 ---
 
-## File map (create in M1)
+## 文件地图（M1 创建）
 
 ```
 agent-workflow-orchestrator/
@@ -68,17 +68,17 @@ agent-workflow-orchestrator/
 
 ---
 
-### Task 1: Monorepo scaffold + Postgres
+### 任务 1：Monorepo 脚手架 + Postgres
 
-**Files:**
-- Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `docker-compose.yml`, `apps/control-plane/package.json`, `apps/web/package.json`, `packages/graph-schema/package.json`
-- Test: `pnpm -r exec tsc --noEmit` after stub entry files exist
+**文件：**
+- 创建：`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `docker-compose.yml`, `apps/control-plane/package.json`, `apps/web/package.json`, `packages/graph-schema/package.json`
+- 测试：`pnpm -r exec tsc --noEmit` 在桩入口文件存在之后
 
-**Interfaces:**
-- Consumes: none
-- Produces: workspace packages `@awo/graph-schema`, `@awo/control-plane`, `@awo/web`; Postgres on `localhost:5432`, db `awo`, user/password `awo`/`awo`
+**接口：**
+- 消费：无
+- 产出：工作区包 `@awo/graph-schema`、`@awo/control-plane`、`@awo/web`；Postgres 在 `localhost:5432`，库 `awo`，用户/密码 `awo`/`awo`
 
-- [ ] **Step 1: Write root workspace files**
+- [ ] **步骤 1：编写根工作区文件**
 
 `pnpm-workspace.yaml`:
 ```yaml
@@ -117,17 +117,17 @@ volumes:
   pgdata:
 ```
 
-- [ ] **Step 2: Create package stubs**
+- [ ] **步骤 2：创建包桩代码**
 
-Each package gets `"type": "module"`, TypeScript, and a minimal `src/index.ts` exporting a const `PACKAGE = "name"`.
+每个包设置 `"type": "module"`、TypeScript，以及最小的 `src/index.ts`（导出常量 `PACKAGE = "name"`）。
 
-`packages/graph-schema/package.json` name: `@awo/graph-schema`, scripts: `"test": "vitest run"`.
+`packages/graph-schema/package.json` 名称：`@awo/graph-schema`，scripts：`"test": "vitest run"`。
 
-`apps/control-plane/package.json` name: `@awo/control-plane`, deps: `hono`, `drizzle-orm`, `postgres`, `zod`, `@awo/graph-schema`.
+`apps/control-plane/package.json` 名称：`@awo/control-plane`，依赖：`hono`、`drizzle-orm`、`postgres`、`zod`、`@awo/graph-schema`。
 
-`apps/web/package.json` name: `@awo/web`, deps: `react`, `react-dom`, `@xyflow/react`, `@awo/graph-schema`.
+`apps/web/package.json` 名称：`@awo/web`，依赖：`react`、`react-dom`、`@xyflow/react`、`@awo/graph-schema`。
 
-- [ ] **Step 3: Start Postgres and verify**
+- [ ] **步骤 3：启动 Postgres 并验证**
 
 ```bash
 cd /workspace/agent-workflow-orchestrator
@@ -136,9 +136,9 @@ pnpm db:up
 docker compose ps
 ```
 
-Expected: `postgres` state running, port 5432.
+预期：`postgres` 状态为 running，端口 5432。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add package.json pnpm-workspace.yaml tsconfig.base.json docker-compose.yml apps packages
@@ -147,21 +147,21 @@ git commit -m "chore: scaffold pnpm monorepo and postgres"
 
 ---
 
-### Task 2: `@awo/graph-schema` — Zod graph + content hash
+### 任务 2：`@awo/graph-schema` — Zod 图 + 内容哈希
 
-**Files:**
-- Create: `packages/graph-schema/src/graph.ts`, `packages/graph-schema/src/hash.ts`, `packages/graph-schema/src/index.ts`
-- Test: `packages/graph-schema/src/graph.test.ts`
+**文件：**
+- 创建：`packages/graph-schema/src/graph.ts`, `packages/graph-schema/src/hash.ts`, `packages/graph-schema/src/index.ts`
+- 测试：`packages/graph-schema/src/graph.test.ts`
 
-**Interfaces:**
-- Consumes: none
+**接口：**
+- 消费：无
 - Produces:
   - `EdgeKind = "success" | "failure" | "default"`
   - `GraphNode`, `GraphEdge`, `FlowGraph` Zod types
   - `parseFlowGraph(input: unknown): FlowGraph`
-  - `hashGraph(graph: FlowGraph): string` (sha256 of canonical JSON)
+  - `hashGraph(graph: FlowGraph): string` （规范化 JSON 的 sha256）
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -226,17 +226,17 @@ describe("hashGraph", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests — expect FAIL**
+- [ ] **步骤 2：跑测试 — 预期失败**
 
 ```bash
 pnpm --filter @awo/graph-schema test
 ```
 
-Expected: FAIL module not found or exports missing.
+预期：失败（模块未找到或导出缺失）。
 
-- [ ] **Step 3: Implement schema + hash**
+- [ ] **步骤 3：实现 schema + hash**
 
-`graph.ts` — Zod:
+`graph.ts` — Zod：
 
 ```ts
 import { z } from "zod";
@@ -278,7 +278,7 @@ export function parseFlowGraph(input: unknown): FlowGraph {
 }
 ```
 
-`hash.ts`:
+`hash.ts`：
 
 ```ts
 import { createHash } from "node:crypto";
@@ -303,15 +303,15 @@ export function hashGraph(graph: FlowGraph): string {
 }
 ```
 
-- [ ] **Step 4: Run tests — expect PASS**
+- [ ] **步骤 4：跑测试 — 预期通过**
 
 ```bash
 pnpm --filter @awo/graph-schema test
 ```
 
-Expected: PASS
+预期：通过
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add packages/graph-schema
@@ -320,18 +320,18 @@ git commit -m "feat(graph-schema): add FlowGraph zod schema and content hash"
 
 ---
 
-### Task 3: Control-plane DB schema + seed
+### 任务 3：控制面 DB schema + 种子数据
 
-**Files:**
-- Create: `apps/control-plane/src/db/schema.ts`, `apps/control-plane/src/db/client.ts`, `apps/control-plane/src/db/seed.ts`, `apps/control-plane/drizzle.config.ts`
-- Test: `apps/control-plane/tests/db-seed.test.ts` (connects to Postgres; skip if `DATABASE_URL` missing)
+**文件：**
+- 创建：`apps/control-plane/src/db/schema.ts`, `apps/control-plane/src/db/client.ts`, `apps/control-plane/src/db/seed.ts`, `apps/control-plane/drizzle.config.ts`
+- 测试：`apps/control-plane/tests/db-seed.test.ts` （连接 Postgres；无 `DATABASE_URL` 则跳过）
 
-**Interfaces:**
-- Consumes: none
-- Produces: Drizzle tables matching spec E-R for M1 subset: `users`, `workspaces`, `memberships`, `projects`, `flows`, `flow_versions`, `node_defs`, `audit_logs`
-- Produces seed: user `u_dev`, workspace `ws_demo`, project `p_demo`, membership role `developer`, node_defs for `Start|End|Branch|HTTP|LLM`
+**接口：**
+- 消费：无
+- 产出：与规格 E-R 对齐的 M1 子集 Drizzle 表： `users`, `workspaces`, `memberships`, `projects`, `flows`, `flow_versions`, `node_defs`, `audit_logs`
+- 产出种子：用户 `u_dev`、工作区 `ws_demo`、项目 `p_demo`、membership 角色 `developer`、`Start|End|Branch|HTTP|LLM` 的 node_defs
 
-- [ ] **Step 1: Write failing seed test**
+- [ ] **步骤 1：编写会失败的种子测试**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -349,32 +349,32 @@ describe("seed", () => {
 });
 ```
 
-- [ ] **Step 2: Run test — expect FAIL**
+- [ ] **步骤 2：跑测试 — 预期失败**
 
 ```bash
 DATABASE_URL=postgres://awo:awo@localhost:5432/awo pnpm --filter @awo/control-plane test
 ```
 
-Expected: FAIL (schema/client missing).
+预期：失败（schema/client 缺失）。
 
-- [ ] **Step 3: Implement Drizzle schema (M1 columns)**
+- [ ] **步骤 3：实现 Drizzle schema（M1 列）
 
-Key columns (camelCase in TS, snake_case in DB via Drizzle):
+关键列（TS 用 camelCase，DB 经 Drizzle 用 snake_case）：
 
 - `flows`: `id`, `projectId`, `name`, `latestDraftVersionId` (nullable text), `publishedVersionId` (nullable text)
 - `flow_versions`: `id`, `flowId`, `version` (int), `status` (`draft|published|archived`), `graphJson` (jsonb), `schemaHash` (text), `createdBy`, `createdAt`
 - `node_defs`: `id`, `workspaceId`, `typeKey`, `category`, `configSchema` (jsonb), `uiMeta` (jsonb), `minRole`
 
-Include FK-ish fields as text ids for speed in M1; add real FKs if time permits.
+M1 为求速度，外键类字段用文本 id；有时间再补真正外键。
 
-- [ ] **Step 4: Migrate + seed**
+- [ ] **步骤 4：迁移 + 种子数据**
 
 ```bash
 pnpm --filter @awo/control-plane db:migrate
 pnpm --filter @awo/control-plane db:seed
 ```
 
-Seed `uiMeta` examples:
+种子数据 `uiMeta` 示例：
 
 ```json
 { "Start": { "color": "blue", "icon": "user", "shape": "rounded" },
@@ -384,9 +384,9 @@ Seed `uiMeta` examples:
   "End": { "color": "green", "icon": "chat", "shape": "rounded" } }
 ```
 
-- [ ] **Step 5: Run test — expect PASS**
+- [ ] **步骤 5：跑测试 — 预期通过**
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add apps/control-plane
@@ -395,24 +395,24 @@ git commit -m "feat(control-plane): add drizzle schema and demo seed"
 
 ---
 
-### Task 4: Flow + draft version API
+### 任务 4：流程 + 草稿版本 API
 
-**Files:**
-- Create: `apps/control-plane/src/middleware/auth.ts`, `apps/control-plane/src/services/flow-service.ts`, `apps/control-plane/src/routes/flows.ts`, `apps/control-plane/src/routes/flow-versions.ts`, `apps/control-plane/src/index.ts`
-- Test: `apps/control-plane/tests/flows.test.ts`
+**文件：**
+- 创建：`apps/control-plane/src/middleware/auth.ts`, `apps/control-plane/src/services/flow-service.ts`, `apps/control-plane/src/routes/flows.ts`, `apps/control-plane/src/routes/flow-versions.ts`, `apps/control-plane/src/index.ts`
+- 测试：`apps/control-plane/tests/flows.test.ts`
 
-**Interfaces:**
-- Consumes: `parseFlowGraph`, `hashGraph` from `@awo/graph-schema`
-- Produces HTTP:
+**接口：**
+- 消费：`parseFlowGraph`, `hashGraph` 来自 `@awo/graph-schema`
+- 产出 HTTP：
   - `POST /projects/:projectId/flows` body `{ name }` → `{ id, name }`
-  - `GET /flows/:flowId` → flow + latest draft graph
-  - `PUT /flows/:flowId/draft` body `{ graph }` → validates, upserts draft `flow_versions`, updates `latest_draft_version_id`, returns `{ versionId, schemaHash, version }`
-  - `POST /flows/:flowId/publish` → copies draft to new `published` version OR marks current draft published **once**; sets `published_version_id`; rejects if no draft; never mutates an already `published` row
-  - `GET /node-defs` → list for workspace (header user)
+  - `GET /flows/:flowId` → flow + 最新草稿图
+  - `PUT /flows/:flowId/draft` body `{ graph }` → 校验、upsert 草稿 `flow_versions`、更新 `latest_draft_version_id`，返回 `{ versionId, schemaHash, version }`
+  - `POST /flows/:flowId/publish` → 把草稿拷成新的 `published` 版本，或把当前草稿 **一次性** 标为 published；设置 `published_version_id`；无草稿则拒绝；永不改写已 `published` 的行
+  - `GET /node-defs` → 按工作区列出（请求头用户）
 
-Auth middleware: read `X-User-Id`, load membership, set `c.set("userId", ...)`, `c.set("workspaceId", ...)`.
+鉴权中间件：读取 `X-User-Id`，加载 membership，设置 `c.set("userId", ...)`、`c.set("workspaceId", ...)`。
 
-- [ ] **Step 1: Write failing API tests** (use Hono `app.request`)
+- [ ] **步骤 1：编写会失败的 API 测试**（使用 Hono `app.request`）
 
 ```ts
 it("creates flow, saves draft, publishes immutable version", async () => {
@@ -467,26 +467,26 @@ it("creates flow, saves draft, publishes immutable version", async () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
-- [ ] **Step 3: Implement service + routes**
+- [ ] **步骤 3：实现 service + 路由**
 
-Publish rules:
+发布规则：
 
-1. Load flow + latest draft version where `status === "draft"`.
-2. If missing → `400`.
-3. Set draft row to `published` **or** insert cloned row with `status=published` and bump `version`; prefer **update in place only if never published before**, else always insert new published snapshot from current draft JSON then keep a fresh draft copy. Simplest correct approach:
+1. 加载 flow + `status === "draft"` 的最新草稿版本。
+2. 若不存在 → `400`。
+3. 把草稿行设为 `published`，**或**插入 `status=published` 的克隆行并递增 `version`；优先 **仅在从未发布过时原地更新**，否则始终从当前草稿 JSON 插入新的已发布快照，并保留新草稿副本。最简单正确做法：
    - Read draft `graph_json`
-   - Insert new `flow_versions` with `status=published`, `version = max+1`
+   - 插入新的 `flow_versions`，`status=published`，`version = max+1`
    - Update `flows.published_version_id`
-   - Leave existing draft row as draft (or clone draft forward)
-4. Write `audit_logs` row `flow.publish`.
+   - 保留现有草稿行（或向前克隆草稿）
+4. 写入 `audit_logs` 行 `flow.publish`。
 
-On `PUT draft`: `parseFlowGraph`, set `graph.id` to version id, `schemaHash = hashGraph(graph)`, upsert draft.
+`PUT draft` 时：`parseFlowGraph`，把 `graph.id` 设为 version id，`schemaHash = hashGraph(graph)`，upsert 草稿。
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(control-plane): flow draft save and immutable publish"
@@ -494,20 +494,20 @@ git commit -m "feat(control-plane): flow draft save and immutable publish"
 
 ---
 
-### Task 5: Canvas UI baseline (style reference)
+### 任务 5：画布 UI 基线（样式参考）
 
-**Files:**
-- Create: `apps/web/src/canvas/FlowCanvas.tsx`, `apps/web/src/canvas/nodes/BaseNode.tsx`, `apps/web/src/canvas/nodes/DecisionNode.tsx`, `apps/web/src/canvas/edges/LabeledEdge.tsx`, `apps/web/src/styles/canvas.css`, `apps/web/src/App.tsx`
-- Test: `apps/web/src/canvas/graph-adapter.test.ts` (pure functions mapping API graph ↔ XYFlow)
+**文件：**
+- 创建：`apps/web/src/canvas/FlowCanvas.tsx`, `apps/web/src/canvas/nodes/BaseNode.tsx`, `apps/web/src/canvas/nodes/DecisionNode.tsx`, `apps/web/src/canvas/edges/LabeledEdge.tsx`, `apps/web/src/styles/canvas.css`, `apps/web/src/App.tsx`
+- 测试：`apps/web/src/canvas/graph-adapter.test.ts` （API 图 ↔ XYFlow 的纯函数映射）
 
-**Interfaces:**
-- Consumes: `FlowGraph` type from `@awo/graph-schema`
+**接口：**
+- 消费：来自 `@awo/graph-schema` 的 `FlowGraph` 类型
 - Produces:
   - `toXyflow(graph: FlowGraph): { nodes: Node[]; edges: Edge[] }`
   - `fromXyflow(nodes, edges, graphId): FlowGraph`
-  - Visual: blue success edges, red failure edges, diamond `Branch`, title area optional
+  - 视觉：蓝色成功边、红色失败边、菱形 `Branch`，标题区可选
 
-- [ ] **Step 1: Write adapter tests**
+- [ ] **步骤 1：编写适配器测试**
 
 ```ts
 it("round-trips handles and edge kinds", () => {
@@ -519,11 +519,11 @@ it("round-trips handles and edge kinds", () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期失败**
 
-- [ ] **Step 3: Implement nodes/edges CSS**
+- [ ] **步骤 3：实现节点/边的 CSS**
 
-`canvas.css` tokens:
+`canvas.css` 设计令牌：
 
 ```css
 :root {
@@ -536,21 +536,21 @@ it("round-trips handles and edge kinds", () => {
 }
 ```
 
-`DecisionNode`: CSS rotate square 45deg or SVG diamond; ports on corners/sides mapped to `success` / `failure`.
+`DecisionNode`：CSS 旋转正方形 45° 或 SVG 菱形；角/边端口映射到 `success` / `failure`。
 
-`LabeledEdge`: use XYFlow `EdgeLabelRenderer` to show `data.label`.
+`LabeledEdge`：用 XYFlow `EdgeLabelRenderer` 显示 `data.label`。
 
-- [ ] **Step 4: Run adapter tests — PASS**
+- [ ] **步骤 4：跑适配器测试 — 通过**
 
-- [ ] **Step 5: Manual check**
+- [ ] **步骤 5：手工检查**
 
 ```bash
 pnpm --filter @awo/web dev
 ```
 
-Open canvas with hardcoded sample graph matching the style reference path (用户问题 → 判断 → 成功/失败).
+打开画布，加载与样式参考路径一致的硬编码样例图（用户问题 → 判断 → 成功/失败）。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git commit -m "feat(web): XYFlow canvas baseline with success/failure edge styles"
@@ -558,26 +558,26 @@ git commit -m "feat(web): XYFlow canvas baseline with success/failure edge style
 
 ---
 
-### Task 6: Wire canvas to control-plane
+### 任务 6：把画布接到控制面
 
-**Files:**
-- Create: `apps/web/src/api/client.ts`
-- Modify: `apps/web/src/App.tsx`, `apps/web/src/canvas/FlowCanvas.tsx`
-- Test: `apps/web/src/api/client.test.ts` (mock `fetch`)
+**文件：**
+- 创建：`apps/web/src/api/client.ts`
+- 修改：`apps/web/src/App.tsx`, `apps/web/src/canvas/FlowCanvas.tsx`
+- 测试：`apps/web/src/api/client.test.ts` （mock `fetch`）
 
-**Interfaces:**
-- Consumes: Task 4 HTTP API
-- Produces: UI actions `Load flow`, `Save draft`, `Publish` calling API with `X-User-Id: u_dev`; debounce save optional (≥300ms) but explicit Save button required in M1
+**接口：**
+- 消费：任务 4 的 HTTP API
+- 产出：UI 动作 `Load flow`、`Save draft`、`Publish` 带 `X-User-Id: u_dev` 调 API；防抖保存可选（≥300ms），但 M1 必须有显式保存按钮
 
-- [ ] **Step 1: Write client unit test with mock fetch for saveDraft**
+- [ ] **步骤 1：用 mock fetch 为 saveDraft 编写客户端单元测试**
 
-- [ ] **Step 2: Implement client + App wiring**
+- [ ] **步骤 2：实现 client + App 接线**
 
-Env: `VITE_API_BASE=http://localhost:8787`
+环境变量：`VITE_API_BASE=http://localhost:8787`
 
-CORS: enable on Hono for that origin.
+CORS：在 Hono 上为该源开启。
 
-- [ ] **Step 3: End-to-end smoke (manual script)**
+- [ ] **步骤 3：端到端冒烟（手动脚本）**
 
 ```bash
 pnpm db:up
@@ -586,14 +586,14 @@ pnpm --filter @awo/control-plane dev   # :8787
 pnpm --filter @awo/web dev             # :5173
 ```
 
-Checklist:
+检查清单：
 
-1. Create/open demo flow
-2. Drag `Branch`, connect success/failure edges with labels
-3. Save draft → refresh → graph restored
-4. Publish → call `GET` flow → `publishedVersionId` set; second edit + save creates new draft hash without altering published row
+1. 创建/打开演示流程
+2. 拖入 `Branch`，连接带标签的 success/failure 边
+3. 保存草稿 → 刷新 → 图恢复
+4. 发布 → `GET` flow → `publishedVersionId` 已设置；再次编辑并保存产生新草稿 hash，不改动已发布行
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git commit -m "feat(web): wire canvas save/publish to control-plane API"
@@ -601,15 +601,15 @@ git commit -m "feat(web): wire canvas save/publish to control-plane API"
 
 ---
 
-### Task 7: M1 README + acceptance checklist
+### 任务 7：M1 README + 验收清单
 
-**Files:**
-- Create: `README.md`
-- Modify: spec status line to note M1 plan exists (optional)
+**文件：**
+- 创建：`README.md`
+- 修改：规格状态行注明已有 M1 计划（可选）
 
-- [ ] **Step 1: Write README** with setup commands and M1 acceptance criteria copied from Task 6 checklist
+- [ ] **步骤 1：编写 README**，含安装命令，以及从任务 6 检查清单复制的 M1 验收标准
 
-- [ ] **Step 2: Commit**
+- [ ] **步骤 2：提交**
 
 ```bash
 git commit -m "docs: add M1 README and local run instructions"
@@ -617,31 +617,31 @@ git commit -m "docs: add M1 README and local run instructions"
 
 ---
 
-## Spec coverage (self-review)
+## 规格覆盖（自检）
 
-| Spec item | Plan task |
+| 规格项 | 计划任务 |
 |---|---|
-| Option A control plane TS | Task 1, 4 |
-| Graph JSON schema | Task 2 |
-| E-R subset for flows/versions/node_defs | Task 3 |
-| Draft + immutable publish | Task 4 |
-| Canvas style reference | Task 5 |
-| CRUD + version + publish M1 | Task 4, 6 |
-| Runtime/executor/debug | Out of scope → M2 plan |
-| Roles/assets/publish gate | Out of scope → M4 plan |
-| Subflow/templates/metrics | Out of scope → M5 plan |
+| 方案 A 控制面 TS | 任务 1、4 |
+| 图 JSON schema | 任务 2 |
+| flows/versions/node_defs 的 E-R 子集 | 任务 3 |
+| 草稿 + 不可变发布 | 任务 4 |
+| 画布样式参考 | 任务 5 |
+| CRUD + 版本 + 发布（M1） | 任务 4、6 |
+| 运行时/执行器/调试 | 超出范围 → M2 计划 |
+| 角色/资产/发布门禁 | 超出范围 → M4 计划 |
+| 子流程/模板/指标 | 超出范围 → M5 计划 |
 
-## Placeholder / consistency check
+## 占位符 / 一致性检查
 
-- Types use `FlowGraph`, `kind: success|failure|default` consistently
-- IDs `u_dev`, `p_demo`, `ws_demo` consistent across seed and tests
-- No TBD steps remaining
+- 类型统一使用 `FlowGraph`、`kind: success|failure|default`
+- 种子与测试中 ID `u_dev`、`p_demo`、`ws_demo` 保持一致
+- 无残留 TBD 步骤
 
 ---
 
-## Execution handoff
+## 执行交接
 
-After this plan is approved for execution, choose:
+本计划批准执行后，选择：
 
-1. **Subagent-Driven (recommended)** — fresh subagent per task, review between tasks
-2. **Inline Execution** — execute in this session with checkpoints
+1. **子代理驱动（推荐）** — 每任务新开子代理，任务间做评审
+2. **会话内执行** — 在本会话按检查点执行

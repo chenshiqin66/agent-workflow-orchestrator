@@ -1,47 +1,47 @@
-# M5 Subflow + Templates + Thin Metrics Implementation Plan
+# M5 子流程 + 模板 + 轻量指标 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：** 必用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，按任务逐步实现本计划。步骤用复选框（`- [ ]`）跟踪。
 
-**Goal:** Add Subflow nodes that expand published child graphs at dispatch time; workspace flow templates with clone-to-draft; thin success/latency/cost metrics aggregated from `runs`.
+**目标：** 增加 Subflow 节点：派发时展开已发布的子图；工作区流程模板支持克隆为草稿；从 `runs` 聚合轻量成功/延迟/成本指标。
 
-**Architecture:** Control plane owns Subflow expansion (`expandSubflows`) so the Python executor stays unchanged. Templates are a new `flow_templates` table plus CRUD/clone routes. Metrics are read-only SQL over existing run columns — no rollup tables, no WS, no CRDT.
+**架构：** 控制面负责 Subflow 展开（`expandSubflows`），Python 执行器无需改动。模板为新表 `flow_templates` 加 CRUD/克隆路由。指标是对现有 run 列的只读 SQL 聚合 — 无汇总表、无 WS、无 CRDT。
 
-**Tech Stack:** Existing M1–M4 stack — TypeScript, pnpm, Hono, Drizzle, PostgreSQL, Vite, React, XYFlow, Vitest, Zod. Paths use `apps/control-plane` (not `apps/api`). Executor: no Subflow-specific Python changes required.
+**技术栈：** 沿用 M1–M4 技术栈 — TypeScript、pnpm、Hono、Drizzle、PostgreSQL、Vite、React、XYFlow、Vitest、Zod。路径使用 `apps/control-plane`（不是 `apps/api`）。执行器：无需 Subflow 相关的 Python 改动。
 
-**Spec:** `docs/superpowers/specs/2026-10-22-m5-subflow-templates-metrics-design.md`
+**规格：** `docs/superpowers/specs/2026-10-22-m5-subflow-templates-metrics-design.md`
 
-## Global Constraints
+## 全局约束
 
-- Product: 编排画布 + 运行时调试 — M5 ships **subflow + templates + thin metrics** only
-- Auth: stub `X-User-Id` + `memberships.role`; executor callbacks `X-Executor-Token` unchanged
-- Roles exact: `admin | developer | builder | viewer` with ranks 3/2/1/0 (reuse `roleAtLeast` / `requireRole`)
-- Subflow pins **`flow_version_id`** (published only); no always-latest `flow_id` ref
-- Expansion max depth **3**; cycle detection via expansion stack of version ids
-- Flattened child node/edge ids: `` `${subflowNodeId}__${childId}` ``
-- Migration name exact: `0005_m5_templates_metrics`
-- Do not change M3 pause/signal/checkpoint behavior (prefixed ids must continue to work)
-- Do not weaken M4 publish gate; only **add** check `subflow_refs`
-- No CRDT collab; no full observability suite; no WS push
-- Metrics: aggregate from `runs` only; no new metrics tables
+- 产品：编排画布 + 运行时调试 — M5 仅交付 **子流程 + 模板 + 轻量指标**
+- 鉴权：桩 `X-User-Id` + `memberships.role`；执行器回调 `X-Executor-Token` 不变
+- 角色精确为：`admin | developer | builder | viewer`，等级 3/2/1/0（复用 `roleAtLeast` / `requireRole`）
+- Subflow 钉住 **`flow_version_id`**（仅已发布）；不支持始终最新的 `flow_id` 引用
+- 展开最大深度 **3**；用 version id 展开栈做环检测
+- 展平后的子节点/边 id：`` `${subflowNodeId}__${childId}` ``
+- 迁移名必须精确：`0005_m5_templates_metrics`
+- 不要改动 M3 暂停/信号/checkpoint 行为（带前缀的 id 必须继续可用）
+- 不要削弱 M4 发布门禁；只 **新增** 检查项 `subflow_refs`
+- 无 CRDT 协作；无完整可观测套件；无 WS 推送
+- 指标：仅从 `runs` 聚合；不新建指标表
 
-**Follow-up (do not implement):** CRDT; WS; alert product; template marketplace; Subflow input/output maps; nested run rows
+**后续（不要实现）：** CRDT；WS；告警产品；模板市场；Subflow 输入/输出映射；嵌套 run 行
 
 ---
 
-## Key architecture decisions (locked for M5)
+## 关键架构决策（M5 已锁定）
 
-| Decision | Choice | Rationale |
+| 决策 | 选择 | 理由 |
 |---|---|---|
-| Subflow execution | Expand at control plane into flat `JobPayload.graph` | Executor unchanged; M3 timeline/breakpoints work |
-| Subflow ref | `config.flow_version_id` published + same workspace | Reproducible runs; matches M1 immutability |
-| State across Subflow | Full state inheritance (no map) | YAGNI |
-| Templates | Snapshot table + clone → new flow/draft | Builder path without mutating source |
-| Metrics | On-read SQL aggregates | Thin v1; no warehouse |
-| Executor changes | None required | Flat graph already executable |
+| Subflow 执行 | 在控制面展开为扁平 `JobPayload.graph` | 执行器不变；M3 时间线/断点仍可用 |
+| Subflow 引用 | `config.flow_version_id` 已发布且同工作区 | 可复现运行；符合 M1 不可变 |
+| 跨 Subflow 状态 | 完整状态继承（无映射） | YAGNI |
+| 模板 | 快照表 + 克隆 → 新 flow/草稿 | builder 路径，不改动源 |
+| 指标 | 读取时 SQL 聚合 | 轻量 v1；无数仓 |
+| 执行器改动 | 无需 | 扁平图已可执行 |
 
 ---
 
-## File map (create / modify in M5)
+## 文件地图（M5 创建/修改）
 
 ```
 agent-workflow-orchestrator/
@@ -79,14 +79,14 @@ agent-workflow-orchestrator/
 
 ---
 
-### Task 1: `expandSubflows` library + unit tests
+### 任务 1：`expandSubflows` 库 + 单元测试
 
-**Files:**
-- Create: `apps/control-plane/src/services/subflow-expand.ts`
-- Create: `apps/control-plane/src/services/subflow-expand.test.ts`
+**文件：**
+- 创建：`apps/control-plane/src/services/subflow-expand.ts`
+- 创建：`apps/control-plane/src/services/subflow-expand.test.ts`
 
-**Interfaces:**
-- Consumes: `FlowGraph` from `@awo/graph-schema`
+**接口：**
+- 消费：`FlowGraph` from `@awo/graph-schema`
 - Produces:
   ```ts
   export type ExpandErrorCode =
@@ -117,7 +117,7 @@ agent-workflow-orchestrator/
   ): Promise<FlowGraph>;
   ```
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
 ```ts
 // apps/control-plane/src/services/subflow-expand.test.ts
@@ -194,12 +194,12 @@ describe("expandSubflows", () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL (module missing)**
+- [ ] **步骤 2：运行 — 预期失败（模块缺失）**
 
-Run: `pnpm --filter @awo/control-plane exec vitest run src/services/subflow-expand.test.ts`  
-Expected: FAIL cannot find module
+Run: `pnpm --filter @awo/control-plane exec vitest run src/services/subflow-expand.test.ts`
+预期：失败（找不到模块）
 
-- [ ] **Step 3: Implement `subflow-expand.ts`**
+- [ ] **步骤 3：实现 `subflow-expand.ts`**
 
 ```ts
 import type { FlowGraph, GraphEdge, GraphNode } from "@awo/graph-schema";
@@ -327,11 +327,11 @@ export async function expandSubflows(
 }
 ```
 
-(Implement carefully: filter out any edge still referencing removed Subflow ids; do not keep placeholder Subflow nodes.)
+（仔细实现：过滤仍引用已移除 Subflow id 的边；不要保留占位 Subflow 节点。）
 
-- [ ] **Step 4: Re-run tests — PASS**
+- [ ] **步骤 4：重跑测试 — 通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/control-plane/src/services/subflow-expand.ts \
@@ -341,18 +341,18 @@ git commit -m "feat(m5): expandSubflows flattens published child graphs"
 
 ---
 
-### Task 2: Migration `0005_m5_templates_metrics` + seed Subflow + sample template
+### 任务 2：迁移 `0005_m5_templates_metrics` + 种子 Subflow + 样例模板
 
-**Files:**
-- Modify: `apps/control-plane/src/db/schema.ts`
-- Create: `apps/control-plane/drizzle/0005_m5_templates_metrics.sql`
-- Modify: `apps/control-plane/src/db/seed.ts`
-- Update drizzle meta journal if the repo uses `drizzle-kit` journal (match M4 pattern in `drizzle/meta`)
+**文件：**
+- 修改：`apps/control-plane/src/db/schema.ts`
+- 创建：`apps/control-plane/drizzle/0005_m5_templates_metrics.sql`
+- 修改：`apps/control-plane/src/db/seed.ts`
+- 若仓库使用 `drizzle-kit` journal，更新 drizzle meta（对齐 `drizzle/meta` 的 M4 模式）
 
-**Interfaces:**
-- Produces Drizzle table `flowTemplates` and seed rows for `Subflow` node_def + at least one `flow_templates` row
+**接口：**
+- 产出 Drizzle 表 `flowTemplates`，以及 `Subflow` node_def + 至少一行 `flow_templates` 种子
 
-- [ ] **Step 1: Add schema**
+- [ ] **步骤 1：添加 schema**
 
 ```ts
 export const flowTemplates = pgTable(
@@ -371,7 +371,7 @@ export const flowTemplates = pgTable(
 );
 ```
 
-- [ ] **Step 2: SQL migration**
+- [ ] **步骤 2：SQL 迁移**
 
 ```sql
 CREATE TABLE IF NOT EXISTS "flow_templates" (
@@ -388,18 +388,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS "flow_templates_workspace_name"
   ON "flow_templates" ("workspace_id", "name");
 ```
 
-- [ ] **Step 3: Seed**
+- [ ] **步骤 3：种子数据**
 
-- Add `Subflow` to `NODE_TYPES` / `UI_META` (color purple, icon nest) / category `control` / `min_role: builder`
+- 向 `NODE_TYPES` / `UI_META`（紫色、nest 图标）/ category `control` / `min_role: builder` 添加 `Subflow`
 - `configSchemaFor("Subflow")` → `{ type: "object", required: ["flow_version_id"], properties: { flow_version_id: { type: "string" } } }`
-- Insert template `tpl_demo_basic` with Start→Transform→End graph for `ws_demo`
-- Optional but recommended for integration: ensure a published child flow exists (create in seed **or** leave to integration test harness)
+- 为 `ws_demo` 插入模板 `tpl_demo_basic`（Start→Transform→End 图）
+- 集成推荐（可选）：确保存在已发布子流程（在种子中创建 **或** 留给集成测试脚手架）
 
-- [ ] **Step 4: Apply migration locally**
+- [ ] **步骤 4：本地应用迁移**
 
-Run: `pnpm db:up` (if needed) then apply SQL the same way M4 did (project’s existing migrate script / `psql` / drizzle push). Confirm table exists.
+运行：按需 `pnpm db:up`，再按 M4 同样方式应用 SQL（项目现有 migrate 脚本 / `psql` / drizzle push）。确认表已存在。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/control-plane/src/db/schema.ts apps/control-plane/src/db/seed.ts \
@@ -409,16 +409,16 @@ git commit -m "feat(m5): flow_templates table, Subflow node_def, demo template s
 
 ---
 
-### Task 3: Templates service + routes + clone
+### 任务 3：模板服务 + 路由 + 克隆
 
-**Files:**
-- Create: `apps/control-plane/src/services/template-service.ts`
-- Create: `apps/control-plane/src/routes/templates.ts`
-- Create: `apps/control-plane/tests/templates.test.ts`
-- Modify: `apps/control-plane/src/index.ts` (mount)
+**文件：**
+- 创建：`apps/control-plane/src/services/template-service.ts`
+- 创建：`apps/control-plane/src/routes/templates.ts`
+- 创建：`apps/control-plane/tests/templates.test.ts`
+- 修改：`apps/control-plane/src/index.ts` (mount)
 
-**Interfaces:**
-- Consumes: `flowTemplates`, `flows`, `flowVersions`, `projects`, `requireRole`, `hashGraph`, `newId`
+**接口：**
+- 消费：`flowTemplates`, `flows`, `flowVersions`, `projects`, `requireRole`, `hashGraph`, `newId`
 - Produces:
   ```ts
   listTemplates(workspaceId: string)
@@ -429,7 +429,7 @@ git commit -m "feat(m5): flow_templates table, Subflow node_def, demo template s
   // → { id: flowId, name }
   ```
 
-- [ ] **Step 1: Failing HTTP tests**
+- [ ] **步骤 1：会失败的 HTTP 测试**
 
 ```ts
 it("developer creates template from published; builder clones", async () => {
@@ -449,22 +449,22 @@ it("viewer cannot create template", async () => {
 });
 ```
 
-- [ ] **Step 2: Implement service**
+- [ ] **步骤 2：实现 service**
 
 `createTemplateFromPublished`:
 
 1. `requireRole(role, "developer")`
-2. Load `flow_versions` by id; require `status === "published"`
-3. Join flow→project→workspace match
-4. Insert `flow_templates` with copied `graphJson`
+2. 按 id 加载 `flow_versions`；要求 `status === "published"`
+3. 校验 flow→project→workspace 匹配
+4. 插入 `flow_templates`，拷贝 `graphJson`
 
 `cloneTemplate`:
 
 1. `requireRole(role, "builder")`
-2. Load template in workspace
-3. Same transaction shape as `createFlow`, but `graphJson = { ...template.graphJson, id: newVersionId }` and `schemaHash = hashGraph(...)`
+2. 在工作区加载模板
+3. 事务形态同 `createFlow`，但 `graphJson = { ...template.graphJson, id: newVersionId }` 且 `schemaHash = hashGraph(...)`
 
-- [ ] **Step 3: Routes**
+- [ ] **步骤 3：路由**
 
 ```ts
 // GET/POST /templates, GET/DELETE /templates/:id, POST /templates/:id/clone
@@ -472,9 +472,9 @@ it("viewer cannot create template", async () => {
 
 Zod-validate bodies.
 
-- [ ] **Step 4: Run tests — PASS**
+- [ ] **步骤 4：跑测试 — 通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(m5): template CRUD and clone-to-draft flow"
@@ -482,19 +482,19 @@ git commit -m "feat(m5): template CRUD and clone-to-draft flow"
 
 ---
 
-### Task 4: Wire expand into run dispatch + publish gate `subflow_refs`
+### 任务 4：把展开接入 run 派发 + 发布门禁 `subflow_refs`
 
-**Files:**
-- Modify: `apps/control-plane/src/services/run-service.ts`
-- Modify: `apps/control-plane/src/services/publish-gate.ts`
-- Modify: `apps/control-plane/src/services/publish-gate.test.ts`
-- Modify: `apps/control-plane/src/services/executor-client.ts` only if job build is there — expand **once** where `graph` is chosen for the job
+**文件：**
+- 修改：`apps/control-plane/src/services/run-service.ts`
+- 修改：`apps/control-plane/src/services/publish-gate.ts`
+- 修改：`apps/control-plane/src/services/publish-gate.test.ts`
+- 修改：仅当 job 构建在此文件时改 `apps/control-plane/src/services/executor-client.ts` — 在选定 job `graph` 处 **展开一次**
 
-**Interfaces:**
-- Consumes: `expandSubflows`, DB lookup for published versions + workspace check
-- Produces: JobPayload.graph always Subflow-free; gate check `{ id: "subflow_refs", ok, message? }`
+**接口：**
+- 消费：`expandSubflows`、已发布版本的 DB 查找 + 工作区校验
+- 产出：JobPayload.graph 始终无 Subflow；门禁检查 `{ id: "subflow_refs", ok, message? }`
 
-- [ ] **Step 1: Resolver helper**
+- [ ] **步骤 1：解析辅助函数**
 
 ```ts
 export async function resolvePublishedForWorkspace(
@@ -516,9 +516,9 @@ export async function resolvePublishedForWorkspace(
 }
 ```
 
-- [ ] **Step 2: Expand in create/dispatch path**
+- [ ] **步骤 2：在创建/派发路径中展开**
 
-After loading the version graph (published or draft), before `dispatchJob`:
+加载版本图（已发布或草稿）之后、`dispatchJob` 之前：
 
 ```ts
 const flat = await expandSubflows(graph, {
@@ -529,9 +529,9 @@ const flat = await expandSubflows(graph, {
 
 Map `SubflowExpandError` → HTTP 400 with `{ error: err.code, details: err.details }`.
 
-- [ ] **Step 3: Gate check**
+- [ ] **步骤 3：门禁检查**
 
-In `evaluatePublishGate`, after existing checks:
+在 `evaluatePublishGate` 现有检查之后：
 
 ```ts
 try {
@@ -549,14 +549,14 @@ try {
 }
 ```
 
-Also fail `required_config` when Subflow misses `flow_version_id` (seed schema already requires it).
+当 Subflow 缺少 `flow_version_id` 时也让 `required_config` 失败（种子 schema 已要求）。
 
-- [ ] **Step 4: Unit tests for gate**
+- [ ] **步骤 4：门禁单元测试**
 
-- Draft with bad `flow_version_id` → `subflow_refs` ok=false
-- Draft with valid published child → ok=true
+- 草稿带错误 `flow_version_id` → `subflow_refs` ok=false
+- 草稿带合法已发布子流程 → ok=true
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(m5): expand Subflow on dispatch; publish gate subflow_refs"
@@ -564,23 +564,23 @@ git commit -m "feat(m5): expand Subflow on dispatch; publish gate subflow_refs"
 
 ---
 
-### Task 5: Metrics service + routes
+### 任务 5：指标服务 + 路由
 
-**Files:**
-- Create: `apps/control-plane/src/services/metrics-service.ts`
-- Create: `apps/control-plane/src/services/metrics-service.test.ts`
-- Create: `apps/control-plane/src/routes/metrics.ts`
-- Create: `apps/control-plane/tests/metrics.test.ts`
-- Modify: `apps/control-plane/src/index.ts`
+**文件：**
+- 创建：`apps/control-plane/src/services/metrics-service.ts`
+- 创建：`apps/control-plane/src/services/metrics-service.test.ts`
+- 创建：`apps/control-plane/src/routes/metrics.ts`
+- 创建：`apps/control-plane/tests/metrics.test.ts`
+- 修改：`apps/control-plane/src/index.ts`
 
-**Interfaces:**
+**接口：**
 - Produces:
   ```ts
   getFlowMetrics(flowId, workspaceId, { from?: Date; to?: Date; trigger?: string })
   getWorkspaceMetrics(workspaceId, { from?: Date; to?: Date; trigger?: string })
   ```
 
-- [ ] **Step 1: Failing unit test with fixture math**
+- [ ] **步骤 1：带 fixture 计算的会失败单元测试**
 
 ```ts
 it("computes success_rate and avg_latency_ms", () => {
@@ -597,22 +597,22 @@ it("computes success_rate and avg_latency_ms", () => {
 });
 ```
 
-Export pure `aggregateRunRows` for unit test without DB.
+导出纯函数 `aggregateRunRows` 供无 DB 单元测试。
 
-- [ ] **Step 2: Implement SQL fetch + aggregate**
+- [ ] **步骤 2：实现 SQL 查询 + 聚合**
 
-- Completed = status in `succeeded|failed|cancelled`
-- `success_rate = succeeded / completed` (0 if completed=0)
-- `in_flight` = count where status in `queued|running|paused|cancel_requested`
+- Completed = 状态属于 `succeeded|failed|cancelled`
+- `success_rate = succeeded / completed`（completed=0 则为 0）
+- `in_flight` = 状态属于 `queued|running|paused|cancel_requested` 的计数
 - Group `by_version` on `flow_version_id`
 
-- [ ] **Step 3: Routes**
+- [ ] **步骤 3：路由**
 
-`GET /metrics/flows/:flowId` and `GET /metrics/workspace` — `requireRole` not needed beyond auth; viewer+ implied by any membership. Return 404 if flow outside workspace.
+`GET /metrics/flows/:flowId` 与 `GET /metrics/workspace` — 鉴权之外无需 `requireRole`；任意 membership 即 viewer+。flow 不在工作区则 404。
 
-- [ ] **Step 4: HTTP test** — insert/use existing runs; assert JSON keys present
+- [ ] **步骤 4：HTTP 测试** — 插入/使用现有 runs；断言 JSON 键存在
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git commit -m "feat(m5): thin flow/workspace metrics from runs"
@@ -620,17 +620,17 @@ git commit -m "feat(m5): thin flow/workspace metrics from runs"
 
 ---
 
-### Task 6: M5 integration test + `test:m5` script
+### 任务 6：M5 集成测试 + `test:m5` 脚本
 
-**Files:**
-- Create: `apps/control-plane/tests/m5-integration.test.ts`
-- Modify: root `package.json` (`test:m5`)
+**文件：**
+- 创建：`apps/control-plane/tests/m5-integration.test.ts`
+- 修改：root `package.json` (`test:m5`)
 
-**Interfaces:**
-- Consumes: live app + DB + executor (same pattern as `test:m3` / `test:m4`)
-- Produces: green `pnpm test:m5`
+**接口：**
+- 消费：真实 app + DB + 执行器（与 `test:m3` / `test:m4` 相同模式）
+- 产出：green `pnpm test:m5`
 
-- [ ] **Step 1: Scenarios**
+- [ ] **步骤 1：场景**
 
 ```ts
 describe("m5 integration", () => {
@@ -653,15 +653,15 @@ describe("m5 integration", () => {
 });
 ```
 
-- [ ] **Step 2: Add script**
+- [ ] **步骤 2：添加脚本**
 
 ```json
 "test:m5": "DATABASE_URL=${DATABASE_URL:-postgres://awo:awo@localhost:5432/awo} EXECUTOR_TOKEN=${EXECUTOR_TOKEN:-test-executor-token-m5} pnpm --filter @awo/control-plane exec vitest run tests/m5-integration.test.ts"
 ```
 
-- [ ] **Step 3: Run `pnpm test:m5` — PASS; smoke `pnpm test:m4` still PASS**
+- [ ] **步骤 3：运行 `pnpm test:m5` — 通过；冒烟 `pnpm test:m4` 仍通过**
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git commit -m "test(m5): integration for subflow expand, templates, metrics"
@@ -669,20 +669,20 @@ git commit -m "test(m5): integration for subflow expand, templates, metrics"
 
 ---
 
-### Task 7: Web — templates panel, metrics panel, M5 sample + docs
+### 任务 7：Web — 模板面板、指标面板、M5 样例 + 文档
 
-**Files:**
-- Modify: `apps/web/src/api/client.ts`, `apps/web/src/api/client.test.ts`
-- Create: `apps/web/src/templates/TemplatesPanel.tsx`
-- Create: `apps/web/src/metrics/MetricsPanel.tsx`
-- Create: `apps/web/src/sample-m5-graph.ts` (parent with Subflow placeholder comment / instructions; or load child version id from status after publish helper)
-- Modify: `apps/web/src/App.tsx`
+**文件：**
+- 修改：`apps/web/src/api/client.ts`, `apps/web/src/api/client.test.ts`
+- 创建：`apps/web/src/templates/TemplatesPanel.tsx`
+- 创建：`apps/web/src/metrics/MetricsPanel.tsx`
+- 创建：`apps/web/src/sample-m5-graph.ts`（带 Subflow 占位注释/说明的父图；或发布辅助后从 status 加载子 version id）
+- 修改：`apps/web/src/App.tsx`
 - Optional: `apps/web/src/styles/m5.css`
-- Modify: `README.md`
-- Modify: `docs/superpowers/specs/2026-10-22-m5-subflow-templates-metrics-design.md` (Status → approved)
-- Modify: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (Status += M5 paths — if not already updated when this plan was written)
+- 修改：`README.md`
+- 修改：`docs/superpowers/specs/2026-10-22-m5-subflow-templates-metrics-design.md`（Status → approved）
+- 修改：`docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`（Status += M5 路径 — 若写本计划时尚未更新）
 
-**Interfaces:**
+**接口：**
 - Client:
   ```ts
   listTemplates(): Promise<TemplateSummary[]>
@@ -692,19 +692,19 @@ git commit -m "test(m5): integration for subflow expand, templates, metrics"
   getWorkspaceMetrics(q?: { from?: string; to?: string }): Promise<WorkspaceMetrics>
   ```
 
-- [ ] **Step 1: Client tests** for listTemplates / getFlowMetrics parsing
+- [ ] **步骤 1：客户端测试** listTemplates / getFlowMetrics 解析
 
-- [ ] **Step 2: TemplatesPanel** — list names; button “从模板创建” calls clone with `PROJECT_ID` + name prompt/default; `onCloned(flowId)` callback to App loader
+- [ ] **步骤 2：TemplatesPanel** — 列出名称；按钮「从模板创建」用 `PROJECT_ID` + 名称提示/默认调用 clone；`onCloned(flowId)` 回调到 App 加载器
 
-- [ ] **Step 3: MetricsPanel** — when `flowId` set, poll/fetch metrics on button “刷新指标”; show success_rate, avg_latency_ms, sum_cost_tokens
+- [ ] **步骤 3：MetricsPanel** — 有 `flowId` 时，点「刷新指标」拉取；显示 success_rate、avg_latency_ms、sum_cost_tokens
 
-- [ ] **Step 4: App** — mount panels; add “加载 M5 样例” that documents Subflow config needs a published `flow_version_id` (sample may use empty Subflow + status hint, or two-step create in UI copy)
+- [ ] **步骤 4：App** — 挂载面板；加「加载 M5 样例」，说明 Subflow 配置需要已发布 `flow_version_id`（样例可用空 Subflow + 状态提示，或 UI 文案里两步创建）
 
-- [ ] **Step 5: README M5 section** — Subflow expand, templates endpoints, metrics, `pnpm test:m5`
+- [ ] **步骤 5：README M5 节** — Subflow 展开、模板端点、指标、`pnpm test:m5`
 
-- [ ] **Step 6: Design status links** — M5 design Status approved; parent Status lists M5 design+plan
+- [ ] **步骤 6：设计状态链接** — M5 设计 Status 为 approved；父规格 Status 列出 M5 design+plan
 
-- [ ] **Step 7: Web vitest PASS; commit**
+- [ ] **步骤 7：Web vitest 通过；提交**
 
 ```bash
 git commit -m "feat(m5): web templates/metrics panels and README"
@@ -712,21 +712,21 @@ git commit -m "feat(m5): web templates/metrics panels and README"
 
 ---
 
-## Self-review (plan vs design)
+## 自检（计划 vs 设计）
 
-| Spec section | Task coverage |
+| 规格章节 | 任务覆盖 |
 |---|---|
-| §3 Subflow config + expand | Task 1 |
-| §3.2 maxDepth/cycle/prefix | Task 1 |
-| §3.3 publish gate `subflow_refs` | Task 4 |
-| §3.4 roles | Tasks 3–4 (existing requireRole) |
-| §4 Templates table/API/clone | Tasks 2–3 |
+| §3 Subflow 配置 + 展开 | 任务 1 |
+| §3.2 maxDepth/环/前缀 | 任务 1 |
+| §3.3 发布门禁 `subflow_refs` | 任务 4 |
+| §3.4 角色 | 任务 3–4（现有 requireRole） |
+| §4 模板表/API/克隆 | 任务 2–3 |
 | §4.3 Seed | Task 2 |
 | §5 Metrics API | Task 5 |
 | §6 Web UI | Task 7 |
-| §7 Acceptance | Task 6 integration |
-| YAGNI (no CRDT/WS/warehouse) | Global Constraints; no tasks add them |
-| Executor unchanged | Locked decision; no executor task |
+| §7 验收 | 任务 6 集成 |
+| YAGNI（无 CRDT/WS/数仓） | 全局约束；无任务添加它们 |
+| 执行器不变 | 已锁定决策；无执行器任务 |
 
-Placeholder scan: no TBD/TODO steps; commands and example tests inlined.  
-Type consistency: `flow_version_id`, `ExpandErrorCode`, `subflow_refs`, `flow_templates`, metrics field names aligned across tasks.
+占位符扫描：无 TBD/TODO 步骤；命令与示例测试已内联。
+类型一致性：`flow_version_id`、`ExpandErrorCode`、`subflow_refs`、`flow_templates`、指标字段名跨任务对齐。
