@@ -1,4 +1,4 @@
-# One-shot local bootstrap for native Windows (PowerShell 5.1+ / 7+).
+﻿# One-shot local bootstrap for native Windows (PowerShell 5.1+ / 7+).
 # Requires: Node >= 20, pnpm, Docker Desktop, Python >= 3.11
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1
@@ -55,7 +55,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "==> pnpm install"
-pnpm install
+pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false install
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "==> Postgres (docker compose)"
@@ -86,7 +86,7 @@ if (-not (Test-Path $venvUvicorn)) {
   Push-Location (Join-Path $Root "apps\executor-py")
   & $py -m venv .venv
   & $venvPython -m pip install -U pip
-  & $venvPip install -e ".[dev]"
+  & $venvPython -m pip install -e ".[dev]"
   Pop-Location
 } else {
   Write-Host "    .venv already present"

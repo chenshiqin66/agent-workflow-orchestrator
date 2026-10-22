@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "dev:up": "bash scripts/dev-up.sh",
-    "dev:api": "pnpm --filter @awo/control-plane dev",
-    "dev:web": "pnpm --filter @awo/web dev",
+    "dev:api": "pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false --filter @awo/control-plane dev",
+    "dev:web": "pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false --filter @awo/web dev",
     "test": "pnpm -r test",
     "db:up": "docker compose up -d postgres",
     "dev:executor": "cd apps/executor-py && .venv/bin/uvicorn awo_executor.main:app --app-dir src --host 127.0.0.1 --port 8790 --reload",

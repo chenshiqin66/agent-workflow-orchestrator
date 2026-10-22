@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot local bootstrap: install → Postgres → migrate/seed → API + executor + web.
+# One-shot local bootstrap: install �?Postgres �?migrate/seed �?API + executor + web.
 # Usage (from repo root):
 #   bash scripts/dev-up.sh
 #   pnpm dev:up
@@ -42,7 +42,7 @@ need_cmd curl
 
 NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
 if [[ "$NODE_MAJOR" -lt 20 ]]; then
-  die "需要 Node.js ≥ 20（当前 $(node -v)）/ Need Node.js ≥ 20 (got $(node -v))"
+  die "需�?Node.js �?20（当�?$(node -v)�? Need Node.js �?20 (got $(node -v))"
 fi
 
 PY_OK="$(python3 - <<'PY'
@@ -51,17 +51,17 @@ print(1 if sys.version_info >= (3, 11) else 0)
 PY
 )"
 if [[ "$PY_OK" != "1" ]]; then
-  die "需要 Python ≥ 3.11（当前 $(python3 -V)）/ Need Python ≥ 3.11 (got $(python3 -V))"
+  die "需�?Python �?3.11（当�?$(python3 -V)�? Need Python �?3.11 (got $(python3 -V))"
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  die "Docker 未运行或当前用户无权访问。请启动 Docker Desktop / daemon 后重试。"
+  die "Docker 未运行或当前用户无权访问。请启动 Docker Desktop / daemon 后重试�?
 fi
 
 echo "    node $(node -v), pnpm $(pnpm -v), $(python3 -V), docker ok"
 
 echo "==> pnpm install"
-pnpm install
+pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false install
 
 echo "==> Postgres (docker compose)"
 pnpm db:up
@@ -72,7 +72,7 @@ for i in $(seq 1 60); do
     break
   fi
   if [[ "$i" -eq 60 ]]; then
-    die "Postgres 在 60s 内未就绪 / Postgres not ready within 60s"
+    die "Postgres �?60s 内未就绪 / Postgres not ready within 60s"
   fi
   sleep 1
 done
@@ -80,8 +80,8 @@ done
 export DATABASE_URL EXECUTOR_TOKEN EXECUTOR_URL CALLBACK_BASE_URL PORT
 
 echo "==> Migrate + seed"
-pnpm --filter @awo/control-plane db:migrate
-pnpm --filter @awo/control-plane db:seed
+pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false --filter @awo/control-plane db:migrate
+pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false --filter @awo/control-plane db:seed
 
 echo "==> Python executor venv"
 if [[ ! -x "$ROOT/apps/executor-py/.venv/bin/uvicorn" ]]; then

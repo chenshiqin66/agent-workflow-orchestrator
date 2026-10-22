@@ -1,4 +1,4 @@
-# Stop processes started by scripts/dev-up.ps1
+﻿# Stop processes started by scripts/dev-up.ps1
 $ErrorActionPreference = "Continue"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $pidsFile = Join-Path $Root ".logs\pids.txt"
