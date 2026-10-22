@@ -1,65 +1,65 @@
-# Design Spec: M3 — Breakpoint / Signal / Human Approval
+# 设计规格：M3 — 断点 / 信号 / 人工审批
 
-- Date: 2026-10-22
-- Status: approved; plan in `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
-- Parent: `docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md` (§11 M3)
-- Depends on: M1 (graph canvas + publish) + M2 (Python executor + test run + timeline)
-- Architecture choice: **checkpoint resume** (stateless executor jobs)
+- 日期：2026-10-22
+- 状态：已批准；计划见 `docs/superpowers/plans/2026-10-22-m3-breakpoint-signal-human-approval.md`
+- 上级规格：`docs/superpowers/specs/2026-10-21-agent-workflow-orchestrator-design.md`（§11 M3）
+- 依赖：M1（图编排画布 + 发布）+ M2（Python 执行器 + 试运行 + 时间线）
+- 架构选型：**检查点续跑**（无状态执行器任务）
 
-## 1. Goal
+## 1. 目标
 
-Ship the debug/approval loop on top of M2:
+在 M2 之上交付调试/审批闭环：
 
-1. Hit a **breakpoint** (or `Breakpoint` node), pause the run, optionally patch state, resume
-2. Hit **`HumanApproval`** / **`Input`**, pause for a user **signal**, then continue on the correct edge
-3. Persist pause reason + checkpoint so executor restarts do not lose in-flight paused runs
+1. 命中**断点**（或 `Breakpoint` 节点），暂停运行，可选修改 state，再续跑
+2. 命中 **`HumanApproval`** / **`Input`**，暂停等待用户**信号**，再沿正确边继续
+3. 持久化暂停原因与检查点，使执行器重启后不会丢失进行中的暂停运行
 
-Non-goals (explicitly out of M3):
+非目标（明确不在 M3 范围）：
 
-- Explicit single-step API (`step`); temporary next-node breakpoint is enough
-- WebSocket push (keep HTTP poll)
-- Real multi-approver routing / SLA / email notify
-- M4 roles / publish gate / asset registry
-- Mid-flight cancel inside a running executor process beyond M2 `cancel_requested` polling semantics
-- Draft dry-run (still published-only)
+- 显式单步 API（`step`）；临时在下一节点设断点即可
+- WebSocket 推送（继续用 HTTP 轮询）
+- 真实多审批人路由 / SLA / 邮件通知
+- M4 角色 / 发布门禁 / 资产注册表
+- 超出 M2 `cancel_requested` 轮询语义的、执行器进程中途取消
+- 草稿试运行（仍仅已发布版本）
 
-## 2. Approach (checkpoint resume)
+## 2. 方案（检查点续跑）
 
-When the executor would wait (breakpoint hit, HumanApproval, Input):
+当执行器需要等待（命中断点、HumanApproval、Input）时：
 
-1. Emit a pause event (`breakpoint_hit` or `waiting_signal`) via existing callback
-2. Persist a **checkpoint** `{ node_id, state, pause_kind, pending_ports? }` on the control plane
-3. Set run status to `paused` and **end the current job** (no long-lived blocked worker)
+1. 通过现有回调发出暂停事件（`breakpoint_hit` 或 `waiting_signal`）
+2. 在控制面持久化**检查点** `{ node_id, state, pause_kind, pending_ports? }`
+3. 将 run 状态设为 `paused` 并**结束当前任务**（不长期占用阻塞中的 worker）
 
-When the user signals or resumes:
+当用户发出信号或续跑时：
 
-1. Control plane validates run is `paused`, records `run_signals` / state patch
-2. Re-dispatch a new job with the same graph + `checkpoint` (+ updated `breakpoints` / signal outcome)
-3. Executor continues from the checkpoint until finish or next pause
+1. 控制面校验 run 为 `paused`，记录 `run_signals` / state 补丁
+2. 用同一张图 + `checkpoint`（以及更新后的 `breakpoints` / 信号结果）重新派发新任务
+3. 执行器从检查点继续，直到结束或再次暂停
 
-Rationale: language-agnostic executors stay swap-friendly; pause survives executor restart; fits M2 HTTP push + callback transport.
+理由：语言无关的执行器便于替换；暂停可在执行器重启后存活；契合 M2 的 HTTP push + callback 传输。
 
-Rejected alternatives:
+已否决的替代方案：
 
-- In-process suspend/wait: lost on restart, holds workers
-- Per-node control-plane scheduler: rewrites M2 execution model
+- 进程内挂起/等待：重启即丢，且占用 worker
+- 按节点由控制面调度：会重写 M2 执行模型
 
-## 3. Protocol extensions (`@awo/run-protocol`)
+## 3. 协议扩展（`@awo/run-protocol`）
 
 ### 3.1 RunStatus
 
-Add `paused` to existing:
+在现有状态中增加 `paused`：
 
 `queued | running | paused | succeeded | failed | cancelled | cancel_requested`
 
 ### 3.2 RunEventType
 
-Add:
+新增：
 
-- `breakpoint_hit` — payload: `{ node_id, state_snapshot? }`
-- `waiting_signal` — payload: `{ node_id, kind: "approval" | "input", schema? }`
-- `signal_received` — payload: `{ signal_id, kind, outcome? }`
-- `state_patched` — payload: `{ patch | full_state }`
+- `breakpoint_hit` — payload：`{ node_id, state_snapshot? }`
+- `waiting_signal` — payload：`{ node_id, kind: "approval" | "input", schema? }`
+- `signal_received` — payload：`{ signal_id, kind, outcome? }`
+- `state_patched` — payload：`{ patch | full_state }`
 
 ### 3.3 Checkpoint + JobPayload
 
@@ -68,106 +68,106 @@ Checkpoint = {
   node_id: string;
   state: Record<string, unknown>;
   pause_kind: "breakpoint" | "approval" | "input";
-  /** After approval/reject: which outgoing edge kind to take on resume */
+  /** 审批通过/拒绝后：续跑时走哪条出边 kind */
   resume_edge_kind?: "success" | "failure" | "default";
-  /** After input: values already merged or to merge on resume */
+  /** Input 之后：已合并或待续跑时合并的值 */
   pending_input?: Record<string, unknown>;
 }
 
 JobPayload += {
   checkpoint?: Checkpoint;
-  breakpoints?: string[]; // node ids to pause BEFORE entering
+  breakpoints?: string[]; // 进入前要暂停的节点 id
 }
 ```
 
-### 3.4 User APIs (control plane)
+### 3.4 用户 API（控制面）
 
-| Method | Path | Notes |
+| 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/runs/{runId}/signal` | Body: `{ kind: "approve" \| "reject" \| "input" \| "resume", payload?: object }` — only when `paused` |
-| `PATCH` | `/runs/{runId}/state` | Body: `{ state: object }` full replace or `{ patch: object }` shallow merge — only when `paused`; emit `state_patched` |
-| `PUT` | `/runs/{runId}/breakpoints` | Body: `{ node_ids: string[] }` upsert active breakpoints for this run |
-| `GET` | `/runs/{runId}/breakpoints` | List active breakpoints |
-| existing | `POST /runs/{runId}/cancel` | Allowed from `paused` → `cancelled` (no re-dispatch) |
+| `POST` | `/runs/{runId}/signal` | Body：`{ kind: "approve" \| "reject" \| "input" \| "resume", payload?: object }` — 仅 `paused` 时可用 |
+| `PATCH` | `/runs/{runId}/state` | Body：`{ state: object }` 全量替换，或 `{ patch: object }` 浅合并 — 仅 `paused`；发出 `state_patched` |
+| `PUT` | `/runs/{runId}/breakpoints` | Body：`{ node_ids: string[] }` 为本 run upsert 活动断点 |
+| `GET` | `/runs/{runId}/breakpoints` | 列出活动断点 |
+| 已有 | `POST /runs/{runId}/cancel` | 允许从 `paused` → `cancelled`（不重新派发） |
 
-Signal semantics:
+信号语义：
 
-- `approve` → set `resume_edge_kind=success`, re-dispatch
-- `reject` → `resume_edge_kind=failure` (fallback `default` if no failure edge), re-dispatch
-- `input` → merge `payload` into checkpoint state, re-dispatch
-- `resume` → after breakpoint (and optional state patch), re-dispatch continuing past the paused node
+- `approve` → 设 `resume_edge_kind=success`，重新派发
+- `reject` → `resume_edge_kind=failure`（若无 failure 边则回退 `default`），重新派发
+- `input` → 将 `payload` 合并进检查点 state，重新派发
+- `resume` → 断点后（及可选 state 补丁）重新派发，越过已暂停节点继续
 
-Invalid signal for current `pause_reason` → `400`.
+与当前 `pause_reason` 不匹配的信号 → `400`。
 
-### 3.5 Internal callbacks
+### 3.5 内部回调
 
-Reuse M2 event callback. Pause events must include enough for control plane to store `checkpoint_json`. Optional dedicated `POST /internal/runs/{id}/pause` is **not** required if event payload carries checkpoint; prefer one callback path.
+复用 M2 事件回调。暂停事件须包含足够信息，供控制面写入 `checkpoint_json`。若事件 payload 已携带检查点，则**不需要**单独的 `POST /internal/runs/{id}/pause`；优先走同一回调路径。
 
-On pause event: control plane sets `status=paused`, stores checkpoint + pause_reason, does not leave status `running`.
+收到暂停事件时：控制面设 `status=paused`，存储检查点与 pause_reason，不得保持 `running`。
 
-## 4. Data model
+## 4. 数据模型
 
-Extend `runs`:
+扩展 `runs`：
 
-- `checkpoint_json` nullable
-- `pause_reason` nullable enum/text: `breakpoint | approval | input`
+- `checkpoint_json` 可空
+- `pause_reason` 可空枚举/文本：`breakpoint | approval | input`
 
-New tables (as in parent E-R):
+新表（与上级 E-R 一致）：
 
-| Table | Fields |
+| 表 | 字段 |
 |---|---|
-| `run_breakpoints` | `id`, `run_id`, `node_id`, `active` (unique run_id+node_id) |
-| `run_signals` | `id`, `run_id`, `kind` (`approval`/`input`/`resume`), `payload_json`, `status` (`pending`/`consumed`/`rejected`), `created_at` |
+| `run_breakpoints` | `id`, `run_id`, `node_id`, `active`（run_id+node_id 唯一） |
+| `run_signals` | `id`, `run_id`, `kind`（`approval`/`input`/`resume`）, `payload_json`, `status`（`pending`/`consumed`/`rejected`）, `created_at` |
 
-Migration: `0003_m3_pause_signal` (name exact in plan).
+迁移：`0003_m3_pause_signal`（名称在计划中写死）。
 
-## 5. Executor (Python)
+## 5. 执行器（Python）
 
-Node handlers for M3:
+M3 节点处理：
 
-- **`Breakpoint`**: always pause with `pause_kind=breakpoint` before/as the node (treat as no-op transform that forces pause)
-- **Dynamic breakpoints**: before entering any node whose id is in `job.breakpoints`, emit `breakpoint_hit` and exit with checkpoint at that node
-- **`HumanApproval`**: emit `waiting_signal` kind=approval; exit paused; on resume with approve/reject, take success/failure edge without re-running approval side effects
-- **`Input`**: emit `waiting_signal` kind=input + optional JSON schema from node config; on resume merge input into state then continue
+- **`Breakpoint`**：始终以 `pause_kind=breakpoint` 暂停（视为强制暂停的空操作变换）
+- **动态断点**：进入 `job.breakpoints` 中任一节点 id 之前，发出 `breakpoint_hit` 并以该节点检查点退出
+- **`HumanApproval`**：发出 `waiting_signal` kind=approval；暂停退出；approve/reject 续跑时走 success/failure 边，且不重复执行审批副作用
+- **`Input`**：发出 `waiting_signal` kind=input + 节点配置中的可选 JSON schema；续跑时将 input 合并进 state 再继续
 
-Resume rules:
+续跑规则：
 
-- If `checkpoint.pause_kind == breakpoint` and signal is `resume`: continue **after** the paused node (or enter it once if pause was before-enter — pick **before-enter** consistently for dynamic breakpoints; `Breakpoint` node counts as entered then paused, resume skips re-entry)
-- Document the chosen rule in OpenAPI sketch and tests
+- 若 `checkpoint.pause_kind == breakpoint` 且信号为 `resume`：从已暂停节点**之后**继续（若暂停发生在进入前，则进入一次 —— 动态断点统一选**进入前**暂停；`Breakpoint` 节点计为已进入再暂停，续跑跳过再次进入）
+- 选定规则须写进 OpenAPI 示意与测试
 
-Keep AST-safe Branch; no real LLM. Cancel: if job sees cancel via existing mechanism mid-run, finish as today; paused runs cancel only on control plane.
+保持 AST 安全的 Branch；不做真实 LLM。取消：任务中途若通过现有机制看到取消，按现有方式结束；已暂停的 run 仅在控制面取消。
 
 ## 6. Web UI
 
-- Timeline renders new event types
-- When `status === paused`, show pause banner (reason + node id) and **SignalPanel**: Approve / Reject / Input form / Resume
-- State editor (JSON) enabled only while paused; calls `PATCH …/state`
-- Breakpoint toggles on canvas nodes; sync `PUT …/breakpoints` for the active run (and optionally stash desired breakpoints to send on next test-run create — M3 minimum: active run only)
-- Polling: do **not** stop on `paused`; stop only on terminal statuses (same as M2 error-stop fix)
-- Sample graph: include `HumanApproval` + at least one breakpoint target
+- 时间线渲染新事件类型
+- 当 `status === paused` 时，显示暂停横幅（原因 + 节点 id）与 **SignalPanel**：Approve / Reject / Input 表单 / Resume
+- State 编辑器（JSON）仅在暂停时可用；调用 `PATCH …/state`
+- 画布节点上切换断点；对活动 run 同步 `PUT …/breakpoints`（可选：把期望断点缓存到下次试运行创建 —— M3 最低要求：仅活动 run）
+- 轮询：**不要**在 `paused` 时停止；仅在终态停止（与 M2 错误停止修复一致）
+- 样例图：包含 `HumanApproval` + 至少一个断点目标
 
-## 7. Acceptance
+## 7. 验收标准
 
-1. Test run hits dynamic breakpoint → `paused` → patch state → `resume` → run succeeds; timeline shows `breakpoint_hit`, `state_patched`, `signal_received`
-2. Graph with `HumanApproval`: Approve takes success path; Reject takes failure path
-3. `Input` node: submitted values appear in later node state / emit
-4. Cancel while `paused` → `cancelled`, no further events after cancel
-5. Integration test covers pause → signal → resume without hanging worker
-6. Docs: update `docs/run-protocol-openapi.md` + README M3 section; parent design status notes M3 plan when written
+1. 试运行命中动态断点 → `paused` → 修改 state → `resume` → 运行成功；时间线出现 `breakpoint_hit`、`state_patched`、`signal_received`
+2. 含 `HumanApproval` 的图：Approve 走成功路径；Reject 走失败路径
+3. `Input` 节点：提交的值出现在后续节点 state / emit 中
+4. 在 `paused` 时取消 → `cancelled`，取消后不再有后续事件
+5. 集成测试覆盖 暂停 → 信号 → 续跑，且不挂起 worker
+6. 文档：更新 `docs/run-protocol-openapi.md` + README M3 小节；上级设计状态在写出计划后注明 M3 计划
 
-## 8. Implementation notes for planning
+## 8. 规划实现备注
 
-- Extend `@awo/run-protocol` first (types + tests), then DB/API, then executor, then web, then docs — same SDD style as M2
-- Single-step: out of scope; implement via setting breakpoint on successor if needed later
-- Seq assignment remains server-side monotonic (M2)
+- 先扩展 `@awo/run-protocol`（类型 + 测试），再 DB/API，再执行器，再 web，再文档 —— 与 M2 同款 SDD 风格
+- 单步：不在范围；需要时可通过在后继节点设断点实现
+- Seq 仍由服务端单调分配（M2）
 
-## 9. Open items resolved in this chat
+## 9. 本对话已敲定事项
 
-- Scope: full M3 (breakpoint + signal + HumanApproval), not a slice
-- Resume model: checkpoint re-dispatch (not in-process wait, not per-node CP scheduler)
-- No per-section UI micro-approval; UI as §6
-- Explicit step API: deferred
+- 范围：完整 M3（断点 + 信号 + HumanApproval），不做切片
+- 续跑模型：检查点重新派发（非进程内等待，非按节点控制面调度）
+- 不做分节 UI 微审批；UI 按 §6
+- 显式 step API：延后
 
-## 10. Approval
+## 10. 批准
 
-Discussed 2026-10-22 in chat. Spec approved; implementation plan written and executed (Tasks 1–7).
+已于 2026-10-22 在对话中讨论。规格已批准；实现计划已写并执行（Tasks 1–7）。

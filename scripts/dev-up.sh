@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One-shot local bootstrap: install �?Postgres �?migrate/seed �?API + executor + web.
-# Usage (from repo root):
+# 一键本地启动：安装依赖 → Postgres → migrate/seed → API + 执行器 + web。
+# 用法（在仓库根目录）：
 #   bash scripts/dev-up.sh
 #   pnpm dev:up
 set -euo pipefail
@@ -19,13 +19,13 @@ CALLBACK_BASE_URL="${CALLBACK_BASE_URL:-http://127.0.0.1:8787}"
 PORT="${PORT:-8787}"
 
 die() {
-  echo "ERROR: $*" >&2
+  echo "错误: $*" >&2
   exit 1
 }
 
 need_cmd() {
   local name="$1"
-  command -v "$name" >/dev/null 2>&1 || die "缺少命令 '$name'。请先安装后重试 / Missing required command: $name"
+  command -v "$name" >/dev/null 2>&1 || die "缺少命令 '$name'。请先安装后重试"
 }
 
 http_ok() {
@@ -33,7 +33,7 @@ http_ok() {
   curl -fsS -o /dev/null --connect-timeout 1 "$url" 2>/dev/null
 }
 
-echo "==> Preflight"
+echo "==> 环境预检"
 need_cmd node
 need_cmd pnpm
 need_cmd docker
@@ -42,7 +42,7 @@ need_cmd curl
 
 NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
 if [[ "$NODE_MAJOR" -lt 20 ]]; then
-  die "需�?Node.js �?20（当�?$(node -v)�? Need Node.js �?20 (got $(node -v))"
+  die "需要 Node.js ≥ 20（当前 $(node -v)）"
 fi
 
 PY_OK="$(python3 - <<'PY'
@@ -51,39 +51,39 @@ print(1 if sys.version_info >= (3, 11) else 0)
 PY
 )"
 if [[ "$PY_OK" != "1" ]]; then
-  die "需�?Python �?3.11（当�?$(python3 -V)�? Need Python �?3.11 (got $(python3 -V))"
+  die "需要 Python ≥ 3.11（当前 $(python3 -V)）"
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  die "Docker 未运行或当前用户无权访问。请启动 Docker Desktop / daemon 后重试�?
+  die "Docker 未运行或当前用户无权访问。请启动 Docker Desktop / daemon 后重试。"
 fi
 
 echo "    node $(node -v), pnpm $(pnpm -v), $(python3 -V), docker ok"
 
 echo "==> pnpm install"
-pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false install
+pnpm install
 
 echo "==> Postgres (docker compose)"
 pnpm db:up
 
-echo "==> Wait for Postgres"
+echo "==> 等待 Postgres 就绪"
 for i in $(seq 1 60); do
   if docker compose exec -T postgres pg_isready -U awo -d awo >/dev/null 2>&1; then
     break
   fi
   if [[ "$i" -eq 60 ]]; then
-    die "Postgres �?60s 内未就绪 / Postgres not ready within 60s"
+    die "Postgres 在 60s 内未就绪"
   fi
   sleep 1
 done
 
 export DATABASE_URL EXECUTOR_TOKEN EXECUTOR_URL CALLBACK_BASE_URL PORT
 
-echo "==> Migrate + seed"
-pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false --filter @awo/control-plane db:migrate
-pnpm --config.minimumReleaseAge=0 --config.verify-deps-before-run=false --filter @awo/control-plane db:seed
+echo "==> 迁移 + 种子数据"
+pnpm --filter @awo/control-plane db:migrate
+pnpm --filter @awo/control-plane db:seed
 
-echo "==> Python executor venv"
+echo "==> Python 执行器虚拟环境"
 if [[ ! -x "$ROOT/apps/executor-py/.venv/bin/uvicorn" ]]; then
   (
     cd "$ROOT/apps/executor-py"
@@ -92,18 +92,18 @@ if [[ ! -x "$ROOT/apps/executor-py/.venv/bin/uvicorn" ]]; then
     .venv/bin/pip install -e ".[dev]"
   )
 else
-  echo "    .venv already present"
+  echo "    .venv 已存在，跳过"
 fi
 
 if [[ ! -f "$ROOT/apps/web/.env" ]]; then
-  echo "==> apps/web/.env from .env.example"
+  echo "==> 从 .env.example 生成 apps/web/.env"
   cp "$ROOT/apps/web/.env.example" "$ROOT/apps/web/.env"
 elif ! grep -q '^VITE_API_BASE=' "$ROOT/apps/web/.env" 2>/dev/null; then
   echo "VITE_API_BASE=http://localhost:8787" >> "$ROOT/apps/web/.env"
 fi
 
 if [[ -f "$LOG_DIR/pids.txt" ]]; then
-  echo "==> Stopping previous dev-up processes (if any)"
+  echo "==> 停止此前的 dev-up 进程（若有）"
   while read -r _name old_pid; do
     if [[ -n "${old_pid:-}" ]] && kill -0 "$old_pid" 2>/dev/null; then
       kill "$old_pid" 2>/dev/null || true
@@ -112,14 +112,14 @@ if [[ -f "$LOG_DIR/pids.txt" ]]; then
   sleep 1
 fi
 
-echo "==> Start control-plane :${PORT}"
+echo "==> 启动控制面 :${PORT}"
 (
   export DATABASE_URL EXECUTOR_TOKEN EXECUTOR_URL CALLBACK_BASE_URL PORT
   nohup pnpm dev:api >"$LOG_DIR/api.log" 2>&1 &
   echo $! >"$LOG_DIR/api.pid"
 )
 
-echo "==> Start executor :${EXECUTOR_PORT}"
+echo "==> 启动执行器 :${EXECUTOR_PORT}"
 (
   cd "$ROOT/apps/executor-py"
   export EXECUTOR_TOKEN
@@ -128,7 +128,7 @@ echo "==> Start executor :${EXECUTOR_PORT}"
   echo $! >"$LOG_DIR/executor.pid"
 )
 
-echo "==> Start web :5173"
+echo "==> 启动 web :5173"
 (
   nohup pnpm dev:web >"$LOG_DIR/web.log" 2>&1 &
   echo $! >"$LOG_DIR/web.pid"
@@ -143,7 +143,7 @@ WEB_PID="$(cat "$LOG_DIR/web.pid")"
   echo "web $WEB_PID"
 } >"$LOG_DIR/pids.txt"
 
-echo "==> Waiting for HTTP readiness"
+echo "==> 等待 HTTP 就绪"
 api_ok=0
 exec_ok=0
 web_ok=0
@@ -161,21 +161,21 @@ for i in $(seq 1 90); do
     break
   fi
   if [[ "$i" -eq 90 ]]; then
-    echo "WARNING: 部分服务可能尚未就绪，请查看 .logs/*.log (api=$api_ok executor=$exec_ok web=$web_ok)" >&2
+    echo "警告: 部分服务可能尚未就绪，请查看 .logs/*.log (api=$api_ok executor=$exec_ok web=$web_ok)" >&2
   fi
   sleep 1
 done
 
 cat <<OUT
 
-Local stack is up.
+本地服务已就绪。
 
   Web:      http://localhost:5173
   API:      http://127.0.0.1:${PORT}
-  Executor: http://127.0.0.1:${EXECUTOR_PORT}
+  执行器:   http://127.0.0.1:${EXECUTOR_PORT}
 
   PIDs: api=${API_PID} executor=${EXEC_PID} web=${WEB_PID}
-  Logs: ${LOG_DIR}/api.log ${LOG_DIR}/executor.log ${LOG_DIR}/web.log
-  Stop:  kill \$(awk '{print \$2}' ${LOG_DIR}/pids.txt)
+  日志: ${LOG_DIR}/api.log ${LOG_DIR}/executor.log ${LOG_DIR}/web.log
+  停止: kill \$(awk '{print \$2}' ${LOG_DIR}/pids.txt)
 
 OUT
